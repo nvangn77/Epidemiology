@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Epi Reference — Epidemiology &amp; Pharmacoepidemiology Tools</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <div class="header-inner">
+        <div>
+          <h1 class="site-title">Epi Reference</h1>
+          <p class="site-subtitle">Epidemiology &amp; pharmacoepidemiology — Danish register context</p>
+        </div>
+        <button id="dark-mode-toggle" class="icon-btn" aria-label="Enable dark mode" title="Toggle dark mode">
+          <span aria-hidden="true" id="dark-mode-icon">◑</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <nav class="tab-nav" role="tablist" aria-label="Main sections">
+      <button class="tab-btn" role="tab" id="tab-formulas"
+              aria-controls="panel-formulas" aria-selected="true" tabindex="0">
+        Formula calculator
+      </button>
+      <button class="tab-btn" role="tab" id="tab-designs"
+              aria-controls="panel-designs" aria-selected="false" tabindex="-1">
+        Study design
+      </button>
+      <button class="tab-btn" role="tab" id="tab-biases"
+              aria-controls="panel-biases" aria-selected="false" tabindex="-1">
+        Bias reference
+      </button>
+    </nav>
+
+    <main id="main-content">
+      <section role="tabpanel" id="panel-formulas" aria-labelledby="tab-formulas">
+        <div class="panel-inner">
+          <div class="select-row">
+            <label for="formula-select" class="select-label">Formula</label>
+            <select id="formula-select" class="select-field"></select>
+          </div>
+          <div id="formula-card" class="card-area"></div>
+        </div>
+      </section>
+
+      <section role="tabpanel" id="panel-designs" aria-labelledby="tab-designs" hidden>
+        <div class="panel-inner">
+          <div class="select-row">
+            <label for="design-select" class="select-label">Study design</label>
+            <select id="design-select" class="select-field"></select>
+          </div>
+          <div id="design-card" class="card-area"></div>
+        </div>
+      </section>
+
+      <section role="tabpanel" id="panel-biases" aria-labelledby="tab-biases" hidden>
+        <div class="panel-inner">
+          <div class="select-row">
+            <label for="bias-select" class="select-label">Bias</label>
+            <select id="bias-select" class="select-field"></select>
+          </div>
+          <div id="bias-card" class="card-area"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>For reference only. Verify formulas against primary sources before use in analysis. Formulas follow Rothman, Greenland &amp; Lash, <em>Modern Epidemiology</em> (3rd ed.) unless otherwise noted.</p>
+    </div>
+  </footer>
+
+  <!-- Load data globals before app logic -->
+  <script src="data/formulas.js"></script>
+  <script src="data/designs.js"></script>
+  <script src="data/biases.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
