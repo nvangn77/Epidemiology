@@ -1215,6 +1215,26 @@ html.dark .dag-code { background: rgba(255,255,255,0.1); }
 /* =========================================================
    Edge selector UI (Build your model tab)
    ========================================================= */
+.edge-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.edge-count-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1em 0.45em;
+  border-radius: 20px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 600;
+  vertical-align: middle;
+  line-height: 1.5;
+}
+
 .edge-selector-row {
   display: flex;
   align-items: center;
@@ -1254,6 +1274,8 @@ html.dark .dag-code { background: rgba(255,255,255,0.1); }
 }
 
 .edge-add-btn:hover { opacity: 0.85; }
+.edge-add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.edge-select:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .edge-error {
   font-size: 0.78rem;

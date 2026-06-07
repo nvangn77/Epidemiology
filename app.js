@@ -819,23 +819,31 @@ function dagLbl(x, y, txt, fill, op) {
     ' fill="'+fill+'" opacity="'+op+'" font-family="system-ui,sans-serif">'+escHtml(txt)+'</text>';
 }
 
-/* ── Custom edge SVG (blue; arcs for same-row, straight otherwise) ── */
-function svgCustomEdge(fp, tp, confounderY) {
+/* ── Custom edge SVG (accent color; arcs for same-row, straight otherwise) ── */
+/* nodeR: approximate outer radius/half-size for each node position */
+function svgCustomEdge(fp, tp, confounderY, nodeRFrom, nodeRTo) {
+  nodeRFrom = nodeRFrom || 26;
+  nodeRTo   = nodeRTo   || 26;
   var dx = tp.x - fp.x, dy = tp.y - fp.y;
   var len = Math.sqrt(dx*dx + dy*dy);
   if (len < 8) return '';
-  var nx = dx/len, ny = dy/len, r = 28;
+  var nx = dx/len, ny = dy/len;
   if (Math.abs(dy) < 20) {
-    /* same row → arc above (confounders) or below (others) */
+    /* same row → arc above confounders (control pt above), below elsewhere */
     var mx = (fp.x + tp.x) / 2;
-    var arc = fp.y <= confounderY + 5 ? -30 : 30;
-    var x1 = fp.x + (dx > 0 ? r : -r), x2 = tp.x + (dx > 0 ? -r : r);
-    return '<path d="M '+x1+','+fp.y+' Q '+mx+','+(fp.y+arc)+' '+x2+','+tp.y+'"' +
-      ' fill="none" stroke="var(--accent)" stroke-width="1.5" opacity="0.7"' +
+    /* arc above confounders: control pt at y=10 (safe margin); below elsewhere: +30 */
+    var arc = fp.y <= confounderY + 5 ? (10 - fp.y) : 30;
+    var x1 = fp.x + (dx > 0 ? nodeRFrom : -nodeRFrom);
+    var x2 = tp.x + (dx > 0 ? -nodeRTo  :  nodeRTo);
+    var cy = fp.y + arc;
+    return '<path d="M '+x1+','+fp.y+' Q '+mx+','+cy+' '+x2+','+tp.y+'"' +
+      ' fill="none" stroke="var(--accent)" stroke-width="1.5" opacity="0.75"' +
       ' marker-end="url(#dagacu)"/>';
   }
-  return dagArrow(fp.x+nx*r, fp.y+ny*r, tp.x-nx*r, tp.y-ny*r,
-    'dagacu', 'var(--accent)', '1.5', '0.7', '');
+  return dagArrow(
+    fp.x + nx * nodeRFrom, fp.y + ny * nodeRFrom,
+    tp.x - nx * nodeRTo,   tp.y - ny * nodeRTo,
+    'dagacu', 'var(--accent)', '1.5', '0.75', '');
 }
 
 function buildBuilderDropdown() {
@@ -986,13 +994,23 @@ function renderBuilderCard(def) {
   edgeDivider2.className = 'builder-divider';
   inputs.appendChild(edgeDivider2);
 
+  var edgeSectionHeader = document.createElement('div');
+  edgeSectionHeader.className = 'edge-section-header';
   var edgeLbl = document.createElement('div');
   edgeLbl.className = 'builder-label';
-  edgeLbl.textContent = 'Additional relationships';
-  inputs.appendChild(edgeLbl);
+  edgeLbl.id = 'bld-edge-title';
+  edgeLbl.textContent = 'Additional DAG edges';
+  var edgeCountBadge = document.createElement('span');
+  edgeCountBadge.className = 'edge-count-badge';
+  edgeCountBadge.id = 'bld-edge-count';
+  edgeLbl.appendChild(edgeCountBadge);
+  edgeSectionHeader.appendChild(edgeLbl);
+  inputs.appendChild(edgeSectionHeader);
+
   var edgeSub = document.createElement('div');
   edgeSub.className = 'builder-sublabel';
-  edgeSub.textContent = 'Draw edges between named nodes; cycles blocked';
+  edgeSub.id = 'bld-edge-sub';
+  edgeSub.textContent = 'Link any two named nodes — e.g., age → SES or age → LDL (mediator). Cycles are blocked.';
   inputs.appendChild(edgeSub);
 
   var edgeRow = document.createElement('div');
@@ -1205,8 +1223,10 @@ function currentBuilderVars() {
 }
 
 function updateEdgeSelector(allNodes) {
-  var fromSel = document.getElementById('bld-edge-from');
-  var toSel   = document.getElementById('bld-edge-to');
+  var fromSel   = document.getElementById('bld-edge-from');
+  var toSel     = document.getElementById('bld-edge-to');
+  var addBtn    = document.querySelector('.edge-add-btn');
+  var countBadge = document.getElementById('bld-edge-count');
   if (!fromSel || !toSel) return;
 
   /* Prune dangling custom edges */
@@ -1215,6 +1235,18 @@ function updateEdgeSelector(allNodes) {
   state.builder.vars.customEdges = state.builder.vars.customEdges.filter(function(e) {
     return nodeSet[e.from] && nodeSet[e.to];
   });
+
+  /* Update count badge */
+  if (countBadge) {
+    var n = allNodes.length;
+    countBadge.textContent = n + ' node' + (n !== 1 ? 's' : '');
+  }
+
+  /* Disable controls when no extra nodes beyond X and Y */
+  var hasExtraNodes = allNodes.length > 2;
+  if (addBtn) addBtn.disabled = !hasExtraNodes;
+  fromSel.disabled = !hasExtraNodes;
+  toSel.disabled   = !hasExtraNodes;
 
   /* Rebuild options preserving current selection */
   var prevFrom = fromSel.value, prevTo = toSel.value;
@@ -1226,8 +1258,8 @@ function updateEdgeSelector(allNodes) {
       sel.appendChild(opt);
     });
   };
-  makeOpts(fromSel, 'From');
-  makeOpts(toSel, 'To');
+  makeOpts(fromSel, hasExtraNodes ? 'From…' : 'Add nodes above first');
+  makeOpts(toSel,   hasExtraNodes ? 'To…'   : '—');
 
   if (nodeSet[prevFrom]) fromSel.value = prevFrom;
   if (nodeSet[prevTo])   toSel.value   = prevTo;
@@ -1308,8 +1340,9 @@ function buildDAGSvg(x, o, cs, ms, meds, cols, customEdges) {
   /* Layout constants */
   var W = 440;
   var expX = 78, outX = 362;
-  var mainY = hasCs ? 128 : 110;
-  var confY = 30;
+  /* Extra top padding when confounders exist so same-row arcs don't clip */
+  var confY = hasCs ? 44 : 30;
+  var mainY = hasCs ? confY + 98 : 110;
   var colY  = mainY + 92;
   var emY   = hasCols ? colY + 52 : mainY + 92;
 
@@ -1319,6 +1352,9 @@ function buildDAGSvg(x, o, cs, ms, meds, cols, customEdges) {
   H = Math.max(H, mainY + 55);
 
   var midX = (expX + outX) / 2;
+
+  /* Per-node radius look-up (half the dominant dimension of the rect) */
+  var nodeR = {};  /* set after pos is built */
 
   /* ── Build position map for all named nodes ── */
   var pos = {};
@@ -1346,6 +1382,14 @@ function buildDAGSvg(x, o, cs, ms, meds, cols, customEdges) {
     var emLeft  = midX - 84 * (emCount - 1) / 2;
     dMs.forEach(function(m, i) { pos[m] = {x: emLeft + i * 84, y: emY}; });
   }
+
+  /* Node half-sizes for clean arrow start/end points */
+  nodeR[x] = 40;  /* exposure: 80px wide → half = 40 */
+  nodeR[o] = 40;  /* outcome:  80px wide → half = 40 */
+  dCs.forEach(function(c) { nodeR[c] = 25; });    /* confounder:   50px wide */
+  dMeds.forEach(function(m) { nodeR[m] = 26; });  /* mediator:     52px wide */
+  dCols.forEach(function(c) { nodeR[c] = 26; });  /* collider:     52px wide */
+  dMs.forEach(function(m) { nodeR[m] = 25; });    /* eff.modifier: 50px wide */
 
   /* Filter custom edges — both endpoints must be in pos */
   var validCustom = customEdges.filter(function(e) { return pos[e.from] && pos[e.to]; });
@@ -1425,12 +1469,12 @@ function buildDAGSvg(x, o, cs, ms, meds, cols, customEdges) {
 
   /* ── CUSTOM EDGES (accent color, rendered in arrows layer) ── */
   validCustom.forEach(function(e) {
-    aB += svgCustomEdge(pos[e.from], pos[e.to], confY);
+    aB += svgCustomEdge(pos[e.from], pos[e.to], confY, nodeR[e.from] || 26, nodeR[e.to] || 26);
   });
 
   /* ── NODES: confounders ── */
   if (hasCs) {
-    nB += dagLbl(W/2, 11, 'Confounders', 'currentColor', '0.42');
+    nB += dagLbl(W/2, confY - 15, 'Confounders', 'currentColor', '0.42');
     dCs.forEach(function(c) {
       var cp = pos[c];
       var cLbl = c.length > 9 ? c.slice(0, 8) + '…' : c;
