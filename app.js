@@ -27,7 +27,8 @@ var state = {
       confounders: '',
       effMods: '',
       mediators: '',
-      colliders: ''
+      colliders: '',
+      customEdges: []
     },
     accordionOpen: {}
   }
@@ -735,6 +736,108 @@ function parseVarList(str) {
   return str.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; });
 }
 
+/* ── Graph helpers ── */
+
+function getAllNodes(x, o, cs, meds, cols, ms) {
+  var seen = {}, nodes = [];
+  function add(n) { if (n && !seen[n]) { seen[n] = true; nodes.push(n); } }
+  add(x); add(o);
+  cs.forEach(add); meds.forEach(add); cols.forEach(add); ms.forEach(add);
+  return nodes;
+}
+
+function getDefaultEdges(x, o, cs, meds, cols) {
+  var edges = [];
+  cs.forEach(function(c) {
+    edges.push({from: c, to: x});
+    edges.push({from: c, to: o});
+  });
+  if (meds.length) {
+    edges.push({from: x, to: meds[0]});
+    for (var i = 0; i < meds.length - 1; i++) edges.push({from: meds[i], to: meds[i+1]});
+    edges.push({from: meds[meds.length - 1], to: o});
+    edges.push({from: x, to: o});
+  } else {
+    edges.push({from: x, to: o});
+  }
+  cols.forEach(function(c) {
+    edges.push({from: x, to: c});
+    edges.push({from: o, to: c});
+  });
+  return edges;
+}
+
+function hasCycle(nodes, edges) {
+  var adj = {};
+  nodes.forEach(function(n) { adj[n] = []; });
+  edges.forEach(function(e) {
+    if (!adj[e.from]) adj[e.from] = [];
+    adj[e.from].push(e.to);
+  });
+  var color = {};  /* 0=white 1=gray(stack) 2=black(done) */
+  nodes.forEach(function(n) { color[n] = 0; });
+
+  function dfs(u) {
+    color[u] = 1;
+    var nbrs = adj[u] || [];
+    for (var i = 0; i < nbrs.length; i++) {
+      var v = nbrs[i];
+      if (color[v] === undefined) continue;
+      if (color[v] === 1) return true;
+      if (color[v] === 0 && dfs(v)) return true;
+    }
+    color[u] = 2;
+    return false;
+  }
+  for (var i = 0; i < nodes.length; i++) {
+    if (color[nodes[i]] === 0 && dfs(nodes[i])) return true;
+  }
+  return false;
+}
+
+/* ── DAG SVG primitives ── */
+function dagArrow(x1, y1, x2, y2, marker, stroke, sw, op, dash) {
+  return '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'"' +
+    ' stroke="'+stroke+'" stroke-width="'+sw+'" opacity="'+op+'"' +
+    (dash ? ' stroke-dasharray="'+dash+'"' : '') +
+    ' marker-end="url(#'+marker+')"/>';
+}
+
+function dagRect(x, y, w, h, r, fill, stroke, sw, fop) {
+  return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="'+r+'"' +
+    ' fill="'+fill+'" fill-opacity="'+(fop||1)+'" stroke="'+stroke+'" stroke-width="'+sw+'"/>';
+}
+
+function dagTxt(x, y, txt, fill, fs, fw) {
+  return '<text x="'+x+'" y="'+y+'" text-anchor="middle" font-size="'+(fs||9)+'"' +
+    ' fill="'+fill+'"'+(fw?' font-weight="'+fw+'"':'')+
+    ' font-family="system-ui,sans-serif">'+escHtml(txt)+'</text>';
+}
+
+function dagLbl(x, y, txt, fill, op) {
+  return '<text x="'+x+'" y="'+y+'" text-anchor="middle" font-size="8"' +
+    ' fill="'+fill+'" opacity="'+op+'" font-family="system-ui,sans-serif">'+escHtml(txt)+'</text>';
+}
+
+/* ── Custom edge SVG (blue; arcs for same-row, straight otherwise) ── */
+function svgCustomEdge(fp, tp, confounderY) {
+  var dx = tp.x - fp.x, dy = tp.y - fp.y;
+  var len = Math.sqrt(dx*dx + dy*dy);
+  if (len < 8) return '';
+  var nx = dx/len, ny = dy/len, r = 28;
+  if (Math.abs(dy) < 20) {
+    /* same row → arc above (confounders) or below (others) */
+    var mx = (fp.x + tp.x) / 2;
+    var arc = fp.y <= confounderY + 5 ? -30 : 30;
+    var x1 = fp.x + (dx > 0 ? r : -r), x2 = tp.x + (dx > 0 ? -r : r);
+    return '<path d="M '+x1+','+fp.y+' Q '+mx+','+(fp.y+arc)+' '+x2+','+tp.y+'"' +
+      ' fill="none" stroke="var(--accent)" stroke-width="1.5" opacity="0.7"' +
+      ' marker-end="url(#dagacu)"/>';
+  }
+  return dagArrow(fp.x+nx*r, fp.y+ny*r, tp.x-nx*r, tp.y-ny*r,
+    'dagacu', 'var(--accent)', '1.5', '0.7', '');
+}
+
 function buildBuilderDropdown() {
   var sel = document.getElementById('builder-model-select');
   var categories = {};
@@ -878,6 +981,102 @@ function renderBuilderCard(def) {
   colF.field.appendChild(colF.inp);
   inputs.appendChild(colF.field);
 
+  /* ── Additional relationships (custom edges) ── */
+  var edgeDivider2 = document.createElement('div');
+  edgeDivider2.className = 'builder-divider';
+  inputs.appendChild(edgeDivider2);
+
+  var edgeLbl = document.createElement('div');
+  edgeLbl.className = 'builder-label';
+  edgeLbl.textContent = 'Additional relationships';
+  inputs.appendChild(edgeLbl);
+  var edgeSub = document.createElement('div');
+  edgeSub.className = 'builder-sublabel';
+  edgeSub.textContent = 'Draw edges between named nodes; cycles blocked';
+  inputs.appendChild(edgeSub);
+
+  var edgeRow = document.createElement('div');
+  edgeRow.className = 'edge-selector-row';
+
+  var fromSel = document.createElement('select');
+  fromSel.id = 'bld-edge-from';
+  fromSel.className = 'edge-select';
+  fromSel.innerHTML = '<option value="">From</option>';
+
+  var arrowSpan = document.createElement('span');
+  arrowSpan.className = 'edge-arrow-label';
+  arrowSpan.textContent = '→';
+  arrowSpan.setAttribute('aria-hidden', 'true');
+
+  var toSel = document.createElement('select');
+  toSel.id = 'bld-edge-to';
+  toSel.className = 'edge-select';
+  toSel.innerHTML = '<option value="">To</option>';
+
+  var edgeAddBtn = document.createElement('button');
+  edgeAddBtn.type = 'button';
+  edgeAddBtn.className = 'edge-add-btn';
+  edgeAddBtn.textContent = 'Add';
+
+  edgeRow.appendChild(fromSel);
+  edgeRow.appendChild(arrowSpan);
+  edgeRow.appendChild(toSel);
+  edgeRow.appendChild(edgeAddBtn);
+  inputs.appendChild(edgeRow);
+
+  var edgeError = document.createElement('div');
+  edgeError.id = 'bld-edge-error';
+  edgeError.className = 'edge-error';
+  edgeError.setAttribute('hidden', '');
+  inputs.appendChild(edgeError);
+
+  var edgeListEl = document.createElement('div');
+  edgeListEl.id = 'bld-edge-list';
+  edgeListEl.className = 'edge-list';
+  inputs.appendChild(edgeListEl);
+
+  /* Live cycle/dupe validation */
+  function liveValidateEdge() {
+    var from = fromSel.value, to = toSel.value;
+    var errEl = document.getElementById('bld-edge-error');
+    if (!from || !to || from === to) { errEl.setAttribute('hidden', ''); return; }
+    var dup = state.builder.vars.customEdges.some(function(e) { return e.from===from && e.to===to; });
+    if (dup) { errEl.textContent = 'Relationship already exists.'; errEl.removeAttribute('hidden'); return; }
+    var rv = currentBuilderVars();
+    var allN = getAllNodes(rv.x, rv.o, rv.cs, rv.meds, rv.cols, rv.ms);
+    var testEdges = getDefaultEdges(rv.x, rv.o, rv.cs, rv.meds, rv.cols)
+      .concat(state.builder.vars.customEdges).concat([{from:from, to:to}]);
+    if (hasCycle(allN, testEdges)) {
+      errEl.textContent = '⛔ Would create a cycle — must remain acyclic.';
+      errEl.removeAttribute('hidden');
+    } else {
+      errEl.setAttribute('hidden', '');
+    }
+  }
+  fromSel.addEventListener('change', liveValidateEdge);
+  toSel.addEventListener('change', liveValidateEdge);
+
+  edgeAddBtn.addEventListener('click', function() {
+    var from = fromSel.value, to = toSel.value;
+    var errEl = document.getElementById('bld-edge-error');
+    if (!from || !to) return;
+    if (from === to) { errEl.textContent = 'Self-loops are not allowed.'; errEl.removeAttribute('hidden'); return; }
+    var dup = state.builder.vars.customEdges.some(function(e) { return e.from===from && e.to===to; });
+    if (dup) { errEl.textContent = 'Relationship already exists.'; errEl.removeAttribute('hidden'); return; }
+    var rv = currentBuilderVars();
+    var allN = getAllNodes(rv.x, rv.o, rv.cs, rv.meds, rv.cols, rv.ms);
+    var testEdges = getDefaultEdges(rv.x, rv.o, rv.cs, rv.meds, rv.cols)
+      .concat(state.builder.vars.customEdges).concat([{from:from, to:to}]);
+    if (hasCycle(allN, testEdges)) {
+      errEl.textContent = '⛔ Creates a cycle — DAG must remain acyclic.';
+      errEl.removeAttribute('hidden'); return;
+    }
+    errEl.setAttribute('hidden', '');
+    state.builder.vars.customEdges.push({from: from, to: to});
+    fromSel.value = ''; toSel.value = '';
+    updateBuilderOutput(def);
+  });
+
   layout.appendChild(inputs);
 
   /* ---- RIGHT: output ---- */
@@ -994,13 +1193,83 @@ function makeAccordion(id, title, populateFn) {
   return wrap;
 }
 
+function currentBuilderVars() {
+  return {
+    o:    state.builder.vars.outcome.trim()    || 'Y',
+    x:    state.builder.vars.exposure.trim()   || 'X',
+    cs:   parseVarList(state.builder.vars.confounders).slice(0, 8),
+    ms:   parseVarList(state.builder.vars.effMods).slice(0, 3),
+    meds: parseVarList(state.builder.vars.mediators).slice(0, 3),
+    cols: parseVarList(state.builder.vars.colliders).slice(0, 3)
+  };
+}
+
+function updateEdgeSelector(allNodes) {
+  var fromSel = document.getElementById('bld-edge-from');
+  var toSel   = document.getElementById('bld-edge-to');
+  if (!fromSel || !toSel) return;
+
+  /* Prune dangling custom edges */
+  var nodeSet = {};
+  allNodes.forEach(function(n) { nodeSet[n] = true; });
+  state.builder.vars.customEdges = state.builder.vars.customEdges.filter(function(e) {
+    return nodeSet[e.from] && nodeSet[e.to];
+  });
+
+  /* Rebuild options preserving current selection */
+  var prevFrom = fromSel.value, prevTo = toSel.value;
+  var makeOpts = function(sel, placeholder) {
+    sel.innerHTML = '<option value="">' + placeholder + '</option>';
+    allNodes.forEach(function(n) {
+      var opt = document.createElement('option');
+      opt.value = n; opt.textContent = n;
+      sel.appendChild(opt);
+    });
+  };
+  makeOpts(fromSel, 'From');
+  makeOpts(toSel, 'To');
+
+  if (nodeSet[prevFrom]) fromSel.value = prevFrom;
+  if (nodeSet[prevTo])   toSel.value   = prevTo;
+
+  renderEdgeList();
+}
+
+function renderEdgeList() {
+  var listEl = document.getElementById('bld-edge-list');
+  if (!listEl) return;
+  var edges = state.builder.vars.customEdges;
+  if (!edges.length) {
+    listEl.innerHTML = '<div class="edge-list-empty">No additional relationships added.</div>';
+    return;
+  }
+  listEl.innerHTML = edges.map(function(e, i) {
+    return '<div class="edge-item">' +
+      '<span class="edge-item-label">' + escHtml(e.from) + ' → ' + escHtml(e.to) + '</span>' +
+      '<button type="button" class="edge-remove-btn" data-idx="' + i + '" aria-label="Remove ' +
+        escHtml(e.from) + ' to ' + escHtml(e.to) + '">✕</button>' +
+      '</div>';
+  }).join('');
+
+  listEl.querySelectorAll('.edge-remove-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var idx = parseInt(btn.getAttribute('data-idx'), 10);
+      state.builder.vars.customEdges.splice(idx, 1);
+      /* Re-run output using stored def via selectBuilderModel trick */
+      var modelId = state.builder.modelId;
+      var def = null;
+      for (var mi = 0; mi < MODELS.length; mi++) { if (MODELS[mi].id === modelId) { def = MODELS[mi]; break; } }
+      if (def) updateBuilderOutput(def);
+    });
+  });
+}
+
 function updateBuilderOutput(def) {
-  var o    = state.builder.vars.outcome.trim()    || 'Y';
-  var x    = state.builder.vars.exposure.trim()   || 'X';
-  var cs   = parseVarList(state.builder.vars.confounders).slice(0, 8);
-  var ms   = parseVarList(state.builder.vars.effMods).slice(0, 3);
-  var meds = parseVarList(state.builder.vars.mediators).slice(0, 3);
-  var cols = parseVarList(state.builder.vars.colliders).slice(0, 3);
+  var rv   = currentBuilderVars();
+  var o    = rv.o, x = rv.x, cs = rv.cs, ms = rv.ms, meds = rv.meds, cols = rv.cols;
+  var allNodes = getAllNodes(x, o, cs, meds, cols, ms);
+
+  updateEdgeSelector(allNodes);
 
   /* Formula */
   var formulaEl = document.getElementById('bld-formula-block');
@@ -1012,7 +1281,7 @@ function updateBuilderOutput(def) {
 
   /* DAG + advice */
   var dagWrap = document.getElementById('bld-dag-wrap');
-  if (dagWrap) dagWrap.innerHTML = buildDAGSvg(x, o, cs, ms, meds, cols);
+  if (dagWrap) dagWrap.innerHTML = buildDAGSvg(x, o, cs, ms, meds, cols, state.builder.vars.customEdges);
   var dagAdviceEl = document.getElementById('bld-dag-advice');
   if (dagAdviceEl) dagAdviceEl.innerHTML = buildAdjustmentAdvice(x, o, meds, cols);
 
@@ -1021,31 +1290,29 @@ function updateBuilderOutput(def) {
   if (rcodeEl) rcodeEl.textContent = def.rCode(o, x, cs, ms);
 }
 
-function buildDAGSvg(x, o, cs, ms, meds, cols) {
+function buildDAGSvg(x, o, cs, ms, meds, cols, customEdges) {
   meds = meds || [];
   cols = cols || [];
+  customEdges = customEdges || [];
 
-  var displayCs   = cs.slice(0, 5);
-  var displayMs   = ms.slice(0, 2);
-  var displayMeds = meds.slice(0, 3);
-  var displayCols = cols.slice(0, 3);
+  var dCs   = cs.slice(0, 5);
+  var dMs   = ms.slice(0, 2);
+  var dMeds = meds.slice(0, 3);
+  var dCols = cols.slice(0, 3);
 
-  var hasCs   = displayCs.length   > 0;
-  var hasMs   = displayMs.length   > 0;
-  var hasMeds = displayMeds.length > 0;
-  var hasCols = displayCols.length > 0;
+  var hasCs   = dCs.length   > 0;
+  var hasMs   = dMs.length   > 0;
+  var hasMeds = dMeds.length > 0;
+  var hasCols = dCols.length > 0;
 
   /* Layout constants */
   var W = 440;
   var expX = 78, outX = 362;
-  /* Main axis Y — push down when confounders need space above */
   var mainY = hasCs ? 128 : 110;
+  var confY = 30;
+  var colY  = mainY + 92;
+  var emY   = hasCols ? colY + 52 : mainY + 92;
 
-  /* Vertical positions for optional zones */
-  var colY = mainY + 92;   /* colliders below */
-  var emY  = hasCols ? colY + 52 : mainY + 92;  /* effect modifiers */
-
-  /* Total height */
   var H = mainY + 70;
   if (hasCols) H = Math.max(H, colY + 28);
   if (hasMs)   H = Math.max(H, emY + 25);
@@ -1053,13 +1320,46 @@ function buildDAGSvg(x, o, cs, ms, meds, cols) {
 
   var midX = (expX + outX) / 2;
 
-  var svg = '<svg role="img" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto">' +
+  /* ── Build position map for all named nodes ── */
+  var pos = {};
+  pos[x] = {x: expX, y: mainY};
+  pos[o] = {x: outX, y: mainY};
+
+  if (hasCs) {
+    var cCount = dCs.length;
+    var cGap   = Math.min(78, (W - 80) / Math.max(cCount, 1));
+    var cLeft  = (W - cGap * (cCount - 1)) / 2;
+    dCs.forEach(function(c, i) { pos[c] = {x: cLeft + i * cGap, y: confY}; });
+  }
+  if (hasMeds) {
+    var mGapPath = (outX - expX) / (dMeds.length + 1);
+    dMeds.forEach(function(m, i) { pos[m] = {x: expX + mGapPath * (i + 1), y: mainY}; });
+  }
+  if (hasCols) {
+    var ccCount = dCols.length;
+    var ccGap   = Math.min(88, 200 / Math.max(ccCount, 1));
+    var ccLeft  = midX - ccGap * (ccCount - 1) / 2;
+    dCols.forEach(function(c, i) { pos[c] = {x: ccLeft + i * ccGap, y: colY}; });
+  }
+  if (hasMs) {
+    var emCount = dMs.length;
+    var emLeft  = midX - 84 * (emCount - 1) / 2;
+    dMs.forEach(function(m, i) { pos[m] = {x: emLeft + i * 84, y: emY}; });
+  }
+
+  /* Filter custom edges — both endpoints must be in pos */
+  var validCustom = customEdges.filter(function(e) { return pos[e.from] && pos[e.to]; });
+
+  /* ── SVG: arrows buffer (aB) drawn first, nodes buffer (nB) on top ── */
+  var aB = '', nB = '';
+
+  var svgOpen = '<svg role="img" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto">' +
     '<title>Directed acyclic graph</title>' +
     '<desc>DAG: ' + escHtml(x) + ' → ' + escHtml(o) +
     (hasCs   ? '; confounders'    : '') +
     (hasMeds ? '; mediators'      : '') +
     (hasCols ? '; colliders'      : '') +
-    (hasMs   ? '; effect modifier': '') + '</desc>' +
+    (hasMs   ? '; effect modifiers': '') + '</desc>' +
     '<defs>' +
     '<marker id="daga"  markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
     '<polygon points="0 0,7 2.5,0 5" fill="currentColor" opacity="0.65"/></marker>' +
@@ -1067,141 +1367,123 @@ function buildDAGSvg(x, o, cs, ms, meds, cols) {
     '<polygon points="0 0,7 2.5,0 5" fill="var(--svg-period)" opacity="0.85"/></marker>' +
     '<marker id="dagac" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
     '<polygon points="0 0,7 2.5,0 5" fill="var(--svg-event)" opacity="0.75"/></marker>' +
+    '<marker id="dagacu" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
+    '<polygon points="0 0,7 2.5,0 5" fill="var(--accent)" opacity="0.75"/></marker>' +
     '</defs>';
 
-  /* ── CONFOUNDERS (top) ── */
+  /* ── CONFOUNDERS arrows ── */
   if (hasCs) {
-    var cCount = displayCs.length;
-    var cGap   = Math.min(78, (W - 80) / Math.max(cCount, 1));
-    var cLeft  = (W - cGap * (cCount - 1)) / 2;
-    var cy     = 30;
-
-    displayCs.forEach(function(c, i) {
-      var cx   = cLeft + i * cGap;
-      var cLbl = c.length > 9 ? c.slice(0, 8) + '…' : c;
-      svg += '<line x1="' + cx + '" y1="' + (cy+14) + '" x2="' + (expX+14) + '" y2="' + (mainY-16) +
-        '" stroke="currentColor" stroke-width="1.4" opacity="0.45" stroke-dasharray="4,3" marker-end="url(#daga)"/>';
-      svg += '<line x1="' + cx + '" y1="' + (cy+14) + '" x2="' + (outX-14) + '" y2="' + (mainY-16) +
-        '" stroke="currentColor" stroke-width="1.4" opacity="0.45" stroke-dasharray="4,3" marker-end="url(#daga)"/>';
-      svg += '<rect x="' + (cx-25) + '" y="' + (cy-13) + '" width="50" height="24" rx="5"' +
-        ' fill="var(--bg)" stroke="currentColor" stroke-width="1.4" opacity="0.8"/>';
-      svg += '<text x="' + cx + '" y="' + (cy+4) + '" text-anchor="middle" font-size="9"' +
-        ' fill="currentColor" font-family="system-ui,sans-serif">' + escHtml(cLbl) + '</text>';
+    dCs.forEach(function(c) {
+      var cp = pos[c];
+      aB += '<line x1="'+cp.x+'" y1="'+(cp.y+14)+'" x2="'+(expX+14)+'" y2="'+(mainY-16)+'"' +
+        ' stroke="currentColor" stroke-width="1.4" opacity="0.45" stroke-dasharray="4,3" marker-end="url(#daga)"/>';
+      aB += '<line x1="'+cp.x+'" y1="'+(cp.y+14)+'" x2="'+(outX-14)+'" y2="'+(mainY-16)+'"' +
+        ' stroke="currentColor" stroke-width="1.4" opacity="0.45" stroke-dasharray="4,3" marker-end="url(#daga)"/>';
     });
-    svg += '<text x="' + (W/2) + '" y="11" text-anchor="middle" font-size="8" fill="currentColor"' +
-      ' opacity="0.42" font-family="system-ui,sans-serif">Confounders</text>';
   }
 
-  /* ── MEDIATORS on path (horizontal) ── */
+  /* ── MEDIATORS arrows ── */
   if (hasMeds) {
-    var mGapPath = (outX - expX) / (displayMeds.length + 1);
-    var medXs = displayMeds.map(function(_, i) { return expX + mGapPath * (i + 1); });
-
-    /* E → M₁ */
-    svg += '<line x1="' + (expX+40) + '" y1="' + mainY + '" x2="' + (medXs[0]-27) + '" y2="' + mainY +
-      '" stroke="currentColor" stroke-width="1.8" opacity="0.8" marker-end="url(#daga)"/>';
-    /* Mᵢ → Mᵢ₊₁ */
+    var medXs = dMeds.map(function(m) { return pos[m].x; });
+    aB += '<line x1="'+(expX+40)+'" y1="'+mainY+'" x2="'+(medXs[0]-27)+'" y2="'+mainY+'"' +
+      ' stroke="currentColor" stroke-width="1.8" opacity="0.8" marker-end="url(#daga)"/>';
     for (var k = 0; k < medXs.length - 1; k++) {
-      svg += '<line x1="' + (medXs[k]+27) + '" y1="' + mainY + '" x2="' + (medXs[k+1]-27) + '" y2="' + mainY +
-        '" stroke="currentColor" stroke-width="1.8" opacity="0.8" marker-end="url(#daga)"/>';
+      aB += '<line x1="'+(medXs[k]+27)+'" y1="'+mainY+'" x2="'+(medXs[k+1]-27)+'" y2="'+mainY+'"' +
+        ' stroke="currentColor" stroke-width="1.8" opacity="0.8" marker-end="url(#daga)"/>';
     }
-    /* Last M → O */
-    svg += '<line x1="' + (medXs[medXs.length-1]+27) + '" y1="' + mainY + '" x2="' + (outX-40) + '" y2="' + mainY +
-      '" stroke="currentColor" stroke-width="1.8" opacity="0.8" marker-end="url(#daga)"/>';
-
-    /* Direct-effect arc (dashed, curves below) */
+    aB += '<line x1="'+(medXs[medXs.length-1]+27)+'" y1="'+mainY+'" x2="'+(outX-40)+'" y2="'+mainY+'"' +
+      ' stroke="currentColor" stroke-width="1.8" opacity="0.8" marker-end="url(#daga)"/>';
     var arcPeakY = mainY + 52;
-    svg += '<path d="M ' + (expX+20) + ',' + (mainY+14) + ' Q ' + midX + ',' + arcPeakY + ' ' + (outX-20) + ',' + (mainY+14) + '"' +
+    aB += '<path d="M '+(expX+20)+','+(mainY+14)+' Q '+midX+','+arcPeakY+' '+(outX-20)+','+(mainY+14)+'"' +
       ' fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="5,3" opacity="0.5" marker-end="url(#daga)"/>';
-    svg += '<text x="' + midX + '" y="' + (arcPeakY+13) + '" text-anchor="middle" font-size="8"' +
-      ' fill="currentColor" opacity="0.38" font-family="system-ui,sans-serif">direct effect</text>';
-    svg += '<text x="' + midX + '" y="' + (mainY-7) + '" text-anchor="middle" font-size="8"' +
-      ' fill="var(--svg-control)" opacity="0.5" font-family="system-ui,sans-serif">indirect pathway</text>';
-
-    /* Mediator nodes */
-    displayMeds.forEach(function(med, i) {
-      var mx   = medXs[i];
-      var mLbl = med.length > 9 ? med.slice(0, 8) + '…' : med;
-      svg += '<rect x="' + (mx-26) + '" y="' + (mainY-14) + '" width="52" height="28" rx="5"' +
-        ' fill="var(--bg)" stroke="var(--svg-control)" stroke-width="1.5"/>';
-      svg += '<text x="' + mx + '" y="' + (mainY+4) + '" text-anchor="middle" font-size="9"' +
-        ' fill="currentColor" font-family="system-ui,sans-serif">' + escHtml(mLbl) + '</text>';
-    });
-    svg += '<text x="' + midX + '" y="' + (mainY-19) + '" text-anchor="middle" font-size="8"' +
-      ' fill="var(--svg-control)" opacity="0.55" font-family="system-ui,sans-serif">Mediator(s)</text>';
-
+    aB += dagLbl(midX, arcPeakY+13, 'direct effect', 'currentColor', '0.38');
+    aB += dagLbl(midX, mainY-7, 'indirect pathway', 'var(--svg-control)', '0.5');
   } else {
-    /* No mediators — simple direct arrow */
-    svg += '<line x1="' + (expX+40) + '" y1="' + mainY + '" x2="' + (outX-40) + '" y2="' + mainY +
-      '" stroke="currentColor" stroke-width="2" opacity="0.75" marker-end="url(#daga)"/>';
+    aB += '<line x1="'+(expX+40)+'" y1="'+mainY+'" x2="'+(outX-40)+'" y2="'+mainY+'"' +
+      ' stroke="currentColor" stroke-width="2" opacity="0.75" marker-end="url(#daga)"/>';
   }
 
-  /* ── COLLIDERS (below, arrows FROM E and O pointing IN) ── */
+  /* ── COLLIDERS arrows ── */
   if (hasCols) {
-    var ccCount = displayCols.length;
-    var ccGap   = Math.min(88, 200 / Math.max(ccCount, 1));
-    var ccLeft  = midX - ccGap * (ccCount - 1) / 2;
-
-    displayCols.forEach(function(col, i) {
-      var cx   = ccLeft + i * ccGap;
-      var cLbl = col.length > 9 ? col.slice(0, 8) + '…' : col;
-
-      /* E → collider */
-      svg += '<line x1="' + (expX+22) + '" y1="' + (mainY+18) + '" x2="' + (cx-16) + '" y2="' + (colY-14) +
-        '" stroke="var(--svg-event)" stroke-width="1.4" opacity="0.6" marker-end="url(#dagac)"/>';
-      /* O → collider */
-      svg += '<line x1="' + (outX-22) + '" y1="' + (mainY+18) + '" x2="' + (cx+16) + '" y2="' + (colY-14) +
-        '" stroke="var(--svg-event)" stroke-width="1.4" opacity="0.6" marker-end="url(#dagac)"/>';
-
-      svg += '<rect x="' + (cx-26) + '" y="' + (colY-14) + '" width="52" height="26" rx="5"' +
-        ' fill="var(--bg)" stroke="var(--svg-event)" stroke-width="1.5" opacity="0.85"/>';
-      svg += '<text x="' + cx + '" y="' + (colY+4) + '" text-anchor="middle" font-size="9"' +
-        ' fill="var(--svg-event)" font-family="system-ui,sans-serif">' + escHtml(cLbl) + '</text>';
+    dCols.forEach(function(col) {
+      var cp = pos[col];
+      aB += '<line x1="'+(expX+22)+'" y1="'+(mainY+18)+'" x2="'+(cp.x-16)+'" y2="'+(colY-14)+'"' +
+        ' stroke="var(--svg-event)" stroke-width="1.4" opacity="0.6" marker-end="url(#dagac)"/>';
+      aB += '<line x1="'+(outX-22)+'" y1="'+(mainY+18)+'" x2="'+(cp.x+16)+'" y2="'+(colY-14)+'"' +
+        ' stroke="var(--svg-event)" stroke-width="1.4" opacity="0.6" marker-end="url(#dagac)"/>';
     });
-    svg += '<text x="' + midX + '" y="' + (colY+21) + '" text-anchor="middle" font-size="8"' +
-      ' fill="var(--svg-event)" opacity="0.55" font-family="system-ui,sans-serif">Collider(s) — do not condition</text>';
   }
 
-  /* ── EFFECT MODIFIERS (bottom, dashed arrow to E→O midpoint) ── */
+  /* ── EFFECT MODIFIER arrows ── */
   if (hasMs) {
-    var emCount = displayMs.length;
-    var emGap   = 84;
-    var emLeft  = midX - emGap * (emCount - 1) / 2;
-
-    displayMs.forEach(function(m, i) {
-      var mx   = emLeft + i * emGap;
-      var mLbl = m.length > 9 ? m.slice(0, 8) + '…' : m;
-      svg += '<line x1="' + mx + '" y1="' + (emY-14) + '" x2="' + midX + '" y2="' + (mainY+14) +
-        '" stroke="var(--svg-period)" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.85" marker-end="url(#dagam)"/>';
-      svg += '<rect x="' + (mx-25) + '" y="' + (emY-14) + '" width="50" height="26" rx="5"' +
-        ' fill="var(--bg)" stroke="var(--svg-period)" stroke-width="1.5"/>';
-      svg += '<text x="' + mx + '" y="' + (emY+4) + '" text-anchor="middle" font-size="9"' +
-        ' fill="var(--svg-period)" font-family="system-ui,sans-serif">' + escHtml(mLbl) + '</text>';
+    dMs.forEach(function(m) {
+      var mp = pos[m];
+      aB += '<line x1="'+mp.x+'" y1="'+(emY-14)+'" x2="'+midX+'" y2="'+(mainY+14)+'"' +
+        ' stroke="var(--svg-period)" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.85" marker-end="url(#dagam)"/>';
     });
-    svg += '<text x="' + midX + '" y="' + (emY+21) + '" text-anchor="middle" font-size="8"' +
-      ' fill="var(--svg-period)" opacity="0.6" font-family="system-ui,sans-serif">Effect modifier(s) → interaction</text>';
   }
 
-  /* ── EXPOSURE node ── */
+  /* ── CUSTOM EDGES (accent color, rendered in arrows layer) ── */
+  validCustom.forEach(function(e) {
+    aB += svgCustomEdge(pos[e.from], pos[e.to], confY);
+  });
+
+  /* ── NODES: confounders ── */
+  if (hasCs) {
+    nB += dagLbl(W/2, 11, 'Confounders', 'currentColor', '0.42');
+    dCs.forEach(function(c) {
+      var cp = pos[c];
+      var cLbl = c.length > 9 ? c.slice(0, 8) + '…' : c;
+      nB += dagRect(cp.x-25, cp.y-13, 50, 24, 5, 'var(--bg)', 'currentColor', 1.4, 0.8);
+      nB += dagTxt(cp.x, cp.y+4, cLbl, 'currentColor', 9, null);
+    });
+  }
+
+  /* ── NODES: mediators ── */
+  if (hasMeds) {
+    nB += dagLbl(midX, mainY-19, 'Mediator(s)', 'var(--svg-control)', '0.55');
+    dMeds.forEach(function(med) {
+      var mp = pos[med];
+      var mLbl = med.length > 9 ? med.slice(0, 8) + '…' : med;
+      nB += dagRect(mp.x-26, mainY-14, 52, 28, 5, 'var(--bg)', 'var(--svg-control)', 1.5, 1);
+      nB += dagTxt(mp.x, mainY+4, mLbl, 'currentColor', 9, null);
+    });
+  }
+
+  /* ── NODES: colliders ── */
+  if (hasCols) {
+    nB += dagLbl(midX, colY+21, 'Collider(s) — do not condition', 'var(--svg-event)', '0.55');
+    dCols.forEach(function(col) {
+      var cp = pos[col];
+      var cLbl = col.length > 9 ? col.slice(0, 8) + '…' : col;
+      nB += dagRect(cp.x-26, colY-14, 52, 26, 5, 'var(--bg)', 'var(--svg-event)', 1.5, 0.85);
+      nB += dagTxt(cp.x, colY+4, cLbl, 'var(--svg-event)', 9, null);
+    });
+  }
+
+  /* ── NODES: effect modifiers ── */
+  if (hasMs) {
+    nB += dagLbl(midX, emY+21, 'Effect modifier(s) → interaction', 'var(--svg-period)', '0.6');
+    dMs.forEach(function(m) {
+      var mp = pos[m];
+      var mLbl = m.length > 9 ? m.slice(0, 8) + '…' : m;
+      nB += dagRect(mp.x-25, emY-14, 50, 26, 5, 'var(--bg)', 'var(--svg-period)', 1.5, 1);
+      nB += dagTxt(mp.x, emY+4, mLbl, 'var(--svg-period)', 9, null);
+    });
+  }
+
+  /* ── NODES: exposure & outcome (always on top) ── */
   var xLbl = x.length > 11 ? x.slice(0, 10) + '…' : x;
-  svg += '<rect x="' + (expX-40) + '" y="' + (mainY-18) + '" width="80" height="36" rx="7"' +
-    ' fill="var(--svg-exposed)" opacity="0.14" stroke="var(--svg-exposed)" stroke-width="2"/>';
-  svg += '<text x="' + expX + '" y="' + (mainY+5) + '" text-anchor="middle" font-size="10"' +
-    ' fill="var(--svg-exposed)" font-weight="600" font-family="system-ui,sans-serif">' + escHtml(xLbl) + '</text>';
-  svg += '<text x="' + expX + '" y="' + (mainY+26) + '" text-anchor="middle" font-size="8"' +
-    ' fill="var(--svg-exposed)" opacity="0.65" font-family="system-ui,sans-serif">Exposure</text>';
+  nB += dagRect(expX-40, mainY-18, 80, 36, 7, 'var(--svg-exposed)', 'var(--svg-exposed)', 2, 0.14);
+  nB += dagTxt(expX, mainY+5, xLbl, 'var(--svg-exposed)', 10, '600');
+  nB += dagLbl(expX, mainY+26, 'Exposure', 'var(--svg-exposed)', '0.65');
 
-  /* ── OUTCOME node ── */
   var oLbl = o.length > 11 ? o.slice(0, 10) + '…' : o;
-  svg += '<rect x="' + (outX-40) + '" y="' + (mainY-18) + '" width="80" height="36" rx="7"' +
-    ' fill="var(--svg-event)" opacity="0.14" stroke="var(--svg-event)" stroke-width="2"/>';
-  svg += '<text x="' + outX + '" y="' + (mainY+5) + '" text-anchor="middle" font-size="10"' +
-    ' fill="var(--svg-event)" font-weight="600" font-family="system-ui,sans-serif">' + escHtml(oLbl) + '</text>';
-  svg += '<text x="' + outX + '" y="' + (mainY+26) + '" text-anchor="middle" font-size="8"' +
-    ' fill="var(--svg-event)" opacity="0.65" font-family="system-ui,sans-serif">Outcome</text>';
+  nB += dagRect(outX-40, mainY-18, 80, 36, 7, 'var(--svg-event)', 'var(--svg-event)', 2, 0.14);
+  nB += dagTxt(outX, mainY+5, oLbl, 'var(--svg-event)', 10, '600');
+  nB += dagLbl(outX, mainY+26, 'Outcome', 'var(--svg-event)', '0.65');
 
-  svg += '</svg>';
-  return svg;
+  return svgOpen + aB + nB + '</svg>';
 }
 
 function buildAdjustmentAdvice(x, o, meds, cols) {

@@ -1213,6 +1213,107 @@ html.dark .dag-code { background: rgba(255,255,255,0.1); }
 }
 
 /* =========================================================
+   Edge selector UI (Build your model tab)
+   ========================================================= */
+.edge-selector-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+}
+
+.edge-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.edge-arrow-label {
+  font-size: 0.9rem;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.edge-add-btn {
+  padding: 0.3rem 0.7rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+
+.edge-add-btn:hover { opacity: 0.85; }
+
+.edge-error {
+  font-size: 0.78rem;
+  color: var(--error-text);
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.6rem;
+  margin-top: 0.3rem;
+}
+
+.edge-list {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.edge-list-empty {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.edge-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+.edge-item-label {
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', 'SF Mono', monospace;
+  color: var(--accent-text);
+}
+
+.edge-remove-btn {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+
+.edge-remove-btn:hover {
+  color: var(--error-text);
+  background: var(--error-bg);
+}
+
+/* =========================================================
    Footer
    ========================================================= */
 .site-footer {
