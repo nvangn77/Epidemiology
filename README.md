@@ -2,7 +2,7 @@
 
 A self-contained, static single-page web application for epidemiology and pharmacoepidemiology researchers. Works fully offline and is deployable to GitHub Pages with no build step.
 
-**Live app:** https://nvangn77.github.io/epi-reference/ *(after GitHub Pages is enabled)*
+**Live app: https://nvangn77.github.io/Epidemiology/ *(after GitHub Pages is enabled)*
 
 ---
 
