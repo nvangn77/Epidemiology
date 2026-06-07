@@ -28,7 +28,6 @@ var state = {
       effMods: '',
       mediators: '',
       colliders: '',
-      customEdges: []
     },
     accordionOpen: {}
   }
@@ -736,63 +735,28 @@ function parseVarList(str) {
   return str.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; });
 }
 
-/* ── Graph helpers ── */
-
-function getAllNodes(x, o, cs, meds, cols, ms) {
-  var seen = {}, nodes = [];
-  function add(n) { if (n && !seen[n]) { seen[n] = true; nodes.push(n); } }
-  add(x); add(o);
-  cs.forEach(add); meds.forEach(add); cols.forEach(add); ms.forEach(add);
-  return nodes;
-}
-
-function getDefaultEdges(x, o, cs, meds, cols) {
-  var edges = [];
-  cs.forEach(function(c) {
-    edges.push({from: c, to: x});
-    edges.push({from: c, to: o});
-  });
-  if (meds.length) {
-    edges.push({from: x, to: meds[0]});
-    for (var i = 0; i < meds.length - 1; i++) edges.push({from: meds[i], to: meds[i+1]});
-    edges.push({from: meds[meds.length - 1], to: o});
-    edges.push({from: x, to: o});
-  } else {
-    edges.push({from: x, to: o});
-  }
-  cols.forEach(function(c) {
-    edges.push({from: x, to: c});
-    edges.push({from: o, to: c});
-  });
-  return edges;
-}
-
-function hasCycle(nodes, edges) {
-  var adj = {};
-  nodes.forEach(function(n) { adj[n] = []; });
-  edges.forEach(function(e) {
-    if (!adj[e.from]) adj[e.from] = [];
-    adj[e.from].push(e.to);
-  });
-  var color = {};  /* 0=white 1=gray(stack) 2=black(done) */
-  nodes.forEach(function(n) { color[n] = 0; });
-
-  function dfs(u) {
-    color[u] = 1;
-    var nbrs = adj[u] || [];
-    for (var i = 0; i < nbrs.length; i++) {
-      var v = nbrs[i];
-      if (color[v] === undefined) continue;
-      if (color[v] === 1) return true;
-      if (color[v] === 0 && dfs(v)) return true;
+/* Parse confounders with optional hyphen edge syntax: "age, sex, age-SES"
+   → nodes: [age, sex, SES], edges: [{from:age, to:SES}]
+   Duplicate node names are merged automatically. */
+function parseConfounders(str) {
+  var nodes = [], edges = [], seen = {};
+  if (!str || !str.trim()) return {nodes: nodes, edges: edges};
+  str.split(',').forEach(function(item) {
+    item = item.trim();
+    if (!item) return;
+    var di = item.indexOf('-');
+    if (di > 0 && di < item.length - 1) {
+      var from = item.slice(0, di).trim();
+      var to   = item.slice(di + 1).trim();
+      if (!from || !to) return;
+      if (!seen[from]) { seen[from] = true; nodes.push(from); }
+      if (!seen[to])   { seen[to]   = true; nodes.push(to);   }
+      edges.push({from: from, to: to});
+    } else {
+      if (!seen[item]) { seen[item] = true; nodes.push(item); }
     }
-    color[u] = 2;
-    return false;
-  }
-  for (var i = 0; i < nodes.length; i++) {
-    if (color[nodes[i]] === 0 && dfs(nodes[i])) return true;
-  }
-  return false;
+  });
+  return {nodes: nodes, edges: edges};
 }
 
 /* ── DAG SVG primitives ── */
@@ -819,32 +783,6 @@ function dagLbl(x, y, txt, fill, op) {
     ' fill="'+fill+'" opacity="'+op+'" font-family="system-ui,sans-serif">'+escHtml(txt)+'</text>';
 }
 
-/* ── Custom edge SVG (accent color; arcs for same-row, straight otherwise) ── */
-/* nodeR: approximate outer radius/half-size for each node position */
-function svgCustomEdge(fp, tp, confounderY, nodeRFrom, nodeRTo) {
-  nodeRFrom = nodeRFrom || 26;
-  nodeRTo   = nodeRTo   || 26;
-  var dx = tp.x - fp.x, dy = tp.y - fp.y;
-  var len = Math.sqrt(dx*dx + dy*dy);
-  if (len < 8) return '';
-  var nx = dx/len, ny = dy/len;
-  if (Math.abs(dy) < 20) {
-    /* same row → arc above confounders (control pt above), below elsewhere */
-    var mx = (fp.x + tp.x) / 2;
-    /* arc above confounders: control pt at y=10 (safe margin); below elsewhere: +30 */
-    var arc = fp.y <= confounderY + 5 ? (10 - fp.y) : 30;
-    var x1 = fp.x + (dx > 0 ? nodeRFrom : -nodeRFrom);
-    var x2 = tp.x + (dx > 0 ? -nodeRTo  :  nodeRTo);
-    var cy = fp.y + arc;
-    return '<path d="M '+x1+','+fp.y+' Q '+mx+','+cy+' '+x2+','+tp.y+'"' +
-      ' fill="none" stroke="var(--accent)" stroke-width="1.5" opacity="0.75"' +
-      ' marker-end="url(#dagacu)"/>';
-  }
-  return dagArrow(
-    fp.x + nx * nodeRFrom, fp.y + ny * nodeRFrom,
-    tp.x - nx * nodeRTo,   tp.y - ny * nodeRTo,
-    'dagacu', 'var(--accent)', '1.5', '0.75', '');
-}
 
 function buildBuilderDropdown() {
   var sel = document.getElementById('builder-model-select');
@@ -949,7 +887,7 @@ function renderBuilderCard(def) {
   divider.className = 'builder-divider';
   inputs.appendChild(divider);
 
-  var confF = makeField('Confounders', 'Comma-separated list', 'bld-conf', 'age, sex, diabetes, CCI');
+  var confF = makeField('Confounders', 'Comma-separated; use name-name to add an edge (e.g. age-SES)', 'bld-conf', 'age, sex, age-SES, diabetes');
   confF.inp.value = state.builder.vars.confounders;
   confF.inp.addEventListener('input', function() {
     state.builder.vars.confounders = confF.inp.value;
@@ -988,112 +926,6 @@ function renderBuilderCard(def) {
   });
   colF.field.appendChild(colF.inp);
   inputs.appendChild(colF.field);
-
-  /* ── Additional relationships (custom edges) ── */
-  var edgeDivider2 = document.createElement('div');
-  edgeDivider2.className = 'builder-divider';
-  inputs.appendChild(edgeDivider2);
-
-  var edgeSectionHeader = document.createElement('div');
-  edgeSectionHeader.className = 'edge-section-header';
-  var edgeLbl = document.createElement('div');
-  edgeLbl.className = 'builder-label';
-  edgeLbl.id = 'bld-edge-title';
-  edgeLbl.textContent = 'Additional DAG edges';
-  var edgeCountBadge = document.createElement('span');
-  edgeCountBadge.className = 'edge-count-badge';
-  edgeCountBadge.id = 'bld-edge-count';
-  edgeLbl.appendChild(edgeCountBadge);
-  edgeSectionHeader.appendChild(edgeLbl);
-  inputs.appendChild(edgeSectionHeader);
-
-  var edgeSub = document.createElement('div');
-  edgeSub.className = 'builder-sublabel';
-  edgeSub.id = 'bld-edge-sub';
-  edgeSub.textContent = 'Link any two named nodes — e.g., age → SES or age → LDL (mediator). Cycles are blocked.';
-  inputs.appendChild(edgeSub);
-
-  var edgeRow = document.createElement('div');
-  edgeRow.className = 'edge-selector-row';
-
-  var fromSel = document.createElement('select');
-  fromSel.id = 'bld-edge-from';
-  fromSel.className = 'edge-select';
-  fromSel.innerHTML = '<option value="">From</option>';
-
-  var arrowSpan = document.createElement('span');
-  arrowSpan.className = 'edge-arrow-label';
-  arrowSpan.textContent = '→';
-  arrowSpan.setAttribute('aria-hidden', 'true');
-
-  var toSel = document.createElement('select');
-  toSel.id = 'bld-edge-to';
-  toSel.className = 'edge-select';
-  toSel.innerHTML = '<option value="">To</option>';
-
-  var edgeAddBtn = document.createElement('button');
-  edgeAddBtn.type = 'button';
-  edgeAddBtn.className = 'edge-add-btn';
-  edgeAddBtn.textContent = 'Add';
-
-  edgeRow.appendChild(fromSel);
-  edgeRow.appendChild(arrowSpan);
-  edgeRow.appendChild(toSel);
-  edgeRow.appendChild(edgeAddBtn);
-  inputs.appendChild(edgeRow);
-
-  var edgeError = document.createElement('div');
-  edgeError.id = 'bld-edge-error';
-  edgeError.className = 'edge-error';
-  edgeError.setAttribute('hidden', '');
-  inputs.appendChild(edgeError);
-
-  var edgeListEl = document.createElement('div');
-  edgeListEl.id = 'bld-edge-list';
-  edgeListEl.className = 'edge-list';
-  inputs.appendChild(edgeListEl);
-
-  /* Live cycle/dupe validation */
-  function liveValidateEdge() {
-    var from = fromSel.value, to = toSel.value;
-    var errEl = document.getElementById('bld-edge-error');
-    if (!from || !to || from === to) { errEl.setAttribute('hidden', ''); return; }
-    var dup = state.builder.vars.customEdges.some(function(e) { return e.from===from && e.to===to; });
-    if (dup) { errEl.textContent = 'Relationship already exists.'; errEl.removeAttribute('hidden'); return; }
-    var rv = currentBuilderVars();
-    var allN = getAllNodes(rv.x, rv.o, rv.cs, rv.meds, rv.cols, rv.ms);
-    var testEdges = getDefaultEdges(rv.x, rv.o, rv.cs, rv.meds, rv.cols)
-      .concat(state.builder.vars.customEdges).concat([{from:from, to:to}]);
-    if (hasCycle(allN, testEdges)) {
-      errEl.textContent = '⛔ Would create a cycle — must remain acyclic.';
-      errEl.removeAttribute('hidden');
-    } else {
-      errEl.setAttribute('hidden', '');
-    }
-  }
-  fromSel.addEventListener('change', liveValidateEdge);
-  toSel.addEventListener('change', liveValidateEdge);
-
-  edgeAddBtn.addEventListener('click', function() {
-    var from = fromSel.value, to = toSel.value;
-    var errEl = document.getElementById('bld-edge-error');
-    if (!from || !to) return;
-    if (from === to) { errEl.textContent = 'Self-loops are not allowed.'; errEl.removeAttribute('hidden'); return; }
-    var dup = state.builder.vars.customEdges.some(function(e) { return e.from===from && e.to===to; });
-    if (dup) { errEl.textContent = 'Relationship already exists.'; errEl.removeAttribute('hidden'); return; }
-    var rv = currentBuilderVars();
-    var allN = getAllNodes(rv.x, rv.o, rv.cs, rv.meds, rv.cols, rv.ms);
-    var testEdges = getDefaultEdges(rv.x, rv.o, rv.cs, rv.meds, rv.cols)
-      .concat(state.builder.vars.customEdges).concat([{from:from, to:to}]);
-    if (hasCycle(allN, testEdges)) {
-      errEl.textContent = '⛔ Creates a cycle — DAG must remain acyclic.';
-      errEl.removeAttribute('hidden'); return;
-    }
-    errEl.setAttribute('hidden', '');
-    state.builder.vars.customEdges.push({from: from, to: to});
-    fromSel.value = ''; toSel.value = '';
-    updateBuilderOutput(def);
-  });
 
   layout.appendChild(inputs);
 
@@ -1212,96 +1044,22 @@ function makeAccordion(id, title, populateFn) {
 }
 
 function currentBuilderVars() {
+  var confParsed = parseConfounders(state.builder.vars.confounders);
   return {
-    o:    state.builder.vars.outcome.trim()    || 'Y',
-    x:    state.builder.vars.exposure.trim()   || 'X',
-    cs:   parseVarList(state.builder.vars.confounders).slice(0, 8),
-    ms:   parseVarList(state.builder.vars.effMods).slice(0, 3),
-    meds: parseVarList(state.builder.vars.mediators).slice(0, 3),
-    cols: parseVarList(state.builder.vars.colliders).slice(0, 3)
+    o:         state.builder.vars.outcome.trim() || 'Y',
+    x:         state.builder.vars.exposure.trim() || 'X',
+    cs:        confParsed.nodes.slice(0, 8),
+    confEdges: confParsed.edges,
+    ms:        parseVarList(state.builder.vars.effMods).slice(0, 3),
+    meds:      parseVarList(state.builder.vars.mediators).slice(0, 3),
+    cols:      parseVarList(state.builder.vars.colliders).slice(0, 3)
   };
 }
 
-function updateEdgeSelector(allNodes) {
-  var fromSel   = document.getElementById('bld-edge-from');
-  var toSel     = document.getElementById('bld-edge-to');
-  var addBtn    = document.querySelector('.edge-add-btn');
-  var countBadge = document.getElementById('bld-edge-count');
-  if (!fromSel || !toSel) return;
-
-  /* Prune dangling custom edges */
-  var nodeSet = {};
-  allNodes.forEach(function(n) { nodeSet[n] = true; });
-  state.builder.vars.customEdges = state.builder.vars.customEdges.filter(function(e) {
-    return nodeSet[e.from] && nodeSet[e.to];
-  });
-
-  /* Update count badge */
-  if (countBadge) {
-    var n = allNodes.length;
-    countBadge.textContent = n + ' node' + (n !== 1 ? 's' : '');
-  }
-
-  /* Disable controls when no extra nodes beyond X and Y */
-  var hasExtraNodes = allNodes.length > 2;
-  if (addBtn) addBtn.disabled = !hasExtraNodes;
-  fromSel.disabled = !hasExtraNodes;
-  toSel.disabled   = !hasExtraNodes;
-
-  /* Rebuild options preserving current selection */
-  var prevFrom = fromSel.value, prevTo = toSel.value;
-  var makeOpts = function(sel, placeholder) {
-    sel.innerHTML = '<option value="">' + placeholder + '</option>';
-    allNodes.forEach(function(n) {
-      var opt = document.createElement('option');
-      opt.value = n; opt.textContent = n;
-      sel.appendChild(opt);
-    });
-  };
-  makeOpts(fromSel, hasExtraNodes ? 'From…' : 'Add nodes above first');
-  makeOpts(toSel,   hasExtraNodes ? 'To…'   : '—');
-
-  if (nodeSet[prevFrom]) fromSel.value = prevFrom;
-  if (nodeSet[prevTo])   toSel.value   = prevTo;
-
-  renderEdgeList();
-}
-
-function renderEdgeList() {
-  var listEl = document.getElementById('bld-edge-list');
-  if (!listEl) return;
-  var edges = state.builder.vars.customEdges;
-  if (!edges.length) {
-    listEl.innerHTML = '<div class="edge-list-empty">No additional relationships added.</div>';
-    return;
-  }
-  listEl.innerHTML = edges.map(function(e, i) {
-    return '<div class="edge-item">' +
-      '<span class="edge-item-label">' + escHtml(e.from) + ' → ' + escHtml(e.to) + '</span>' +
-      '<button type="button" class="edge-remove-btn" data-idx="' + i + '" aria-label="Remove ' +
-        escHtml(e.from) + ' to ' + escHtml(e.to) + '">✕</button>' +
-      '</div>';
-  }).join('');
-
-  listEl.querySelectorAll('.edge-remove-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var idx = parseInt(btn.getAttribute('data-idx'), 10);
-      state.builder.vars.customEdges.splice(idx, 1);
-      /* Re-run output using stored def via selectBuilderModel trick */
-      var modelId = state.builder.modelId;
-      var def = null;
-      for (var mi = 0; mi < MODELS.length; mi++) { if (MODELS[mi].id === modelId) { def = MODELS[mi]; break; } }
-      if (def) updateBuilderOutput(def);
-    });
-  });
-}
 
 function updateBuilderOutput(def) {
-  var rv   = currentBuilderVars();
-  var o    = rv.o, x = rv.x, cs = rv.cs, ms = rv.ms, meds = rv.meds, cols = rv.cols;
-  var allNodes = getAllNodes(x, o, cs, meds, cols, ms);
-
-  updateEdgeSelector(allNodes);
+  var rv = currentBuilderVars();
+  var o = rv.o, x = rv.x, cs = rv.cs, ms = rv.ms, meds = rv.meds, cols = rv.cols;
 
   /* Formula */
   var formulaEl = document.getElementById('bld-formula-block');
@@ -1313,7 +1071,7 @@ function updateBuilderOutput(def) {
 
   /* DAG + advice */
   var dagWrap = document.getElementById('bld-dag-wrap');
-  if (dagWrap) dagWrap.innerHTML = buildDAGSvg(x, o, cs, ms, meds, cols, state.builder.vars.customEdges);
+  if (dagWrap) dagWrap.innerHTML = buildDAGSvg(x, o, cs, ms, meds, cols, rv.confEdges);
   var dagAdviceEl = document.getElementById('bld-dag-advice');
   if (dagAdviceEl) dagAdviceEl.innerHTML = buildAdjustmentAdvice(x, o, meds, cols);
 
@@ -1322,10 +1080,10 @@ function updateBuilderOutput(def) {
   if (rcodeEl) rcodeEl.textContent = def.rCode(o, x, cs, ms);
 }
 
-function buildDAGSvg(x, o, cs, ms, meds, cols, customEdges) {
+function buildDAGSvg(x, o, cs, ms, meds, cols, confEdges) {
   meds = meds || [];
   cols = cols || [];
-  customEdges = customEdges || [];
+  confEdges = confEdges || [];
 
   var dCs   = cs.slice(0, 5);
   var dMs   = ms.slice(0, 2);
@@ -1391,8 +1149,8 @@ function buildDAGSvg(x, o, cs, ms, meds, cols, customEdges) {
   dCols.forEach(function(c) { nodeR[c] = 26; });  /* collider:     52px wide */
   dMs.forEach(function(m) { nodeR[m] = 25; });    /* eff.modifier: 50px wide */
 
-  /* Filter custom edges — both endpoints must be in pos */
-  var validCustom = customEdges.filter(function(e) { return pos[e.from] && pos[e.to]; });
+  /* Filter confounder edges — both endpoints must be in pos */
+  var validConfEdges = confEdges.filter(function(e) { return pos[e.from] && pos[e.to]; });
 
   /* ── SVG: arrows buffer (aB) drawn first, nodes buffer (nB) on top ── */
   var aB = '', nB = '';
@@ -1411,8 +1169,6 @@ function buildDAGSvg(x, o, cs, ms, meds, cols, customEdges) {
     '<polygon points="0 0,7 2.5,0 5" fill="var(--svg-period)" opacity="0.85"/></marker>' +
     '<marker id="dagac" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
     '<polygon points="0 0,7 2.5,0 5" fill="var(--svg-event)" opacity="0.75"/></marker>' +
-    '<marker id="dagacu" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
-    '<polygon points="0 0,7 2.5,0 5" fill="var(--accent)" opacity="0.75"/></marker>' +
     '</defs>';
 
   /* ── CONFOUNDERS arrows ── */
@@ -1467,9 +1223,27 @@ function buildDAGSvg(x, o, cs, ms, meds, cols, customEdges) {
     });
   }
 
-  /* ── CUSTOM EDGES (accent color, rendered in arrows layer) ── */
-  validCustom.forEach(function(e) {
-    aB += svgCustomEdge(pos[e.from], pos[e.to], confY, nodeR[e.from] || 26, nodeR[e.to] || 26);
+  /* ── CONFOUNDER EDGES from hyphen syntax (dashed gray, same style as confounder arrows) ── */
+  validConfEdges.forEach(function(e) {
+    var fp = pos[e.from], tp = pos[e.to];
+    var dx = tp.x - fp.x, dy = tp.y - fp.y;
+    var len = Math.sqrt(dx*dx + dy*dy);
+    if (len < 8) return;
+    var rF = nodeR[e.from] || 26, rT = nodeR[e.to] || 26;
+    if (Math.abs(dy) < 20) {
+      /* same row → arc above (for confounders) */
+      var mx = (fp.x + tp.x) / 2;
+      var cy2 = fp.y <= confY + 5 ? 10 : fp.y + 30;
+      var x1 = fp.x + (dx > 0 ? rF : -rF);
+      var x2 = tp.x + (dx > 0 ? -rT :  rT);
+      aB += '<path d="M '+x1+','+fp.y+' Q '+mx+','+cy2+' '+x2+','+tp.y+'"' +
+        ' fill="none" stroke="currentColor" stroke-width="1.3" opacity="0.55"' +
+        ' stroke-dasharray="4,3" marker-end="url(#daga)"/>';
+    } else {
+      var nx = dx/len, ny = dy/len;
+      aB += dagArrow(fp.x+nx*rF, fp.y+ny*rF, tp.x-nx*rT, tp.y-ny*rT,
+        'daga', 'currentColor', '1.3', '0.55', '4,3');
+    }
   });
 
   /* ── NODES: confounders ── */
