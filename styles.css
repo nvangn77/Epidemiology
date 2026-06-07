@@ -353,6 +353,61 @@ code, .formula-expr {
   margin-bottom: 0.75rem;
 }
 
+/* Formula context (when to use, designs, analyses) */
+.formula-context {
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.875rem;
+}
+
+.formula-use-when {
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 0.6rem;
+}
+
+.formula-use-when:last-child { margin-bottom: 0; }
+
+.formula-assoc {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.formula-assoc-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  padding-top: 0.15rem;
+}
+
+.formula-assoc-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.badge-design {
+  background: var(--accent-light);
+  color: var(--accent-text);
+  border-color: transparent;
+  font-size: 0.75rem;
+}
+
+.formula-assoc-text {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 /* Component pills */
 .pills-row {
   display: flex;

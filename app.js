@@ -246,6 +246,28 @@ function renderFormulaCard(def) {
     '<p class="formula-desc">' + escHtml(def.description) + '</p>';
   wrap.appendChild(meta);
 
+  /* Context: when to use, associated designs & analyses */
+  if (def.useWhen || def.associatedDesigns || def.associatedAnalyses) {
+    var ctx = document.createElement('div');
+    ctx.className = 'formula-context';
+    var ctxHtml = '';
+    if (def.useWhen) {
+      ctxHtml += '<p class="formula-use-when">' + escHtml(def.useWhen) + '</p>';
+    }
+    if (def.associatedDesigns && def.associatedDesigns.length > 0) {
+      ctxHtml += '<div class="formula-assoc"><span class="formula-assoc-label">Study designs:</span><span class="formula-assoc-badges">';
+      def.associatedDesigns.forEach(function(d) {
+        ctxHtml += '<span class="badge badge-design">' + escHtml(d) + '</span>';
+      });
+      ctxHtml += '</span></div>';
+    }
+    if (def.associatedAnalyses && def.associatedAnalyses.length > 0) {
+      ctxHtml += '<div class="formula-assoc"><span class="formula-assoc-label">Statistical methods:</span><span class="formula-assoc-text">' + escHtml(def.associatedAnalyses.join(', ')) + '</span></div>';
+    }
+    ctx.innerHTML = ctxHtml;
+    wrap.appendChild(ctx);
+  }
+
   /* Component pills */
   if (def.components && def.components.length > 0) {
     var pillsWrap = document.createElement('div');

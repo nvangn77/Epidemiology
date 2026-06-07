@@ -19,6 +19,9 @@
        if (v.y === 0) return { error: 'Denominator is zero.' };
        return { value: v.x / v.y };
      },
+     useWhen: 'When and why to use this measure; which contexts it is appropriate for.',
+     associatedDesigns: ['Cohort', 'RCT'],           // study designs that yield this measure
+     associatedAnalyses: ['Cox regression', 'Poisson regression'], // statistical methods
      components: [   // optional: small expandable pills
        { id: 'X', label: 'X', expression: 'X = ...', description: '...' }
      ]
@@ -100,6 +103,9 @@ var FORMULAS = [
     label: 'Relative Risk (RR)',
     expression: 'RR = R₁ / R₀ = (a/n₁) / (c/n₀)',
     description: 'Ratio of the risk (cumulative incidence) in the exposed group to the risk in the unexposed group.',
+    useWhen: 'Use in closed cohort studies and RCTs with complete follow-up, where you can directly estimate risk (probability) in both groups. Preferred over OR when the outcome is common (>10%) because the OR exaggerates relative risk for common outcomes. RR is the primary effect measure in prospective studies and trial reports.',
+    associatedDesigns: ['RCT', 'Cohort', 'Nested case-control (density sampling)'],
+    associatedAnalyses: ['Log-binomial regression', 'Poisson regression with robust SE', 'Cochran–Mantel–Haenszel'],
     inputs: [
       { id: 'a',  label: 'Events in exposed (a)',     type: 'integer', min: 0 },
       { id: 'n1', label: 'Total exposed (n₁)',          type: 'integer', min: 1 },
@@ -134,6 +140,9 @@ var FORMULAS = [
     label: 'Odds Ratio (OR)',
     expression: 'OR = (a × d) / (b × c)',
     description: 'Ratio of the odds of exposure in cases to the odds of exposure in controls (case-control), or odds of outcome in exposed vs unexposed (cohort).',
+    useWhen: 'The natural measure in case-control studies — the only directly estimable ratio when sampling is based on outcome status. Also the output of logistic regression. Approximates RR when outcome prevalence is low (<10%). Commonly reported in cross-sectional and nested case-control studies. OR overestimates RR when the outcome is common: use RR or PR instead if the design permits.',
+    associatedDesigns: ['Case-control', 'Nested case-control', 'Cross-sectional', 'Cohort (logistic regression)'],
+    associatedAnalyses: ['Logistic regression', 'Conditional logistic regression', 'Mantel–Haenszel stratified analysis'],
     inputs: [
       { id: 'a', label: 'Cell a (cases exposed / events exposed)',        type: 'integer', min: 0 },
       { id: 'b', label: 'Cell b (cases unexposed / non-events exposed)',  type: 'integer', min: 0 },
@@ -166,6 +175,9 @@ var FORMULAS = [
     label: 'Risk Difference / Attributable Risk (AR)',
     expression: 'RD = R₁ − R₀ = a/n₁ − c/n₀',
     description: 'Absolute difference in risk between exposed and unexposed. Positive = excess risk in exposed; negative = protective.',
+    useWhen: 'Use alongside RR to express the absolute burden attributable to the exposure. Essential for public health communication and the basis for NNT/NNH. Two exposures with the same RR can have very different absolute impacts if baseline risk differs — RD captures this. Report RD in addition to, not instead of, relative measures.',
+    associatedDesigns: ['RCT', 'Cohort', 'Cross-sectional'],
+    associatedAnalyses: ['Risk difference from 2×2 table', 'Generalised linear model (identity link)', 'IPTW marginal risk difference'],
     inputs: [
       { id: 'a',  label: 'Events in exposed (a)',     type: 'integer', min: 0 },
       { id: 'n1', label: 'Total exposed (n₁)',          type: 'integer', min: 1 },
@@ -194,6 +206,9 @@ var FORMULAS = [
     label: 'NNT / NNH',
     expression: 'NNT = 1 / |RD|',
     description: 'Number needed to treat (NNT, RD < 0) or number needed to harm (NNH, RD > 0): the number of patients requiring the intervention for one additional outcome event.',
+    useWhen: 'Use in clinical decision-making and patient communication to express absolute benefit or harm in concrete terms. Derived directly from the absolute risk difference. NNT < 1 is impossible; NNT = 10 means you treat 10 patients for one to benefit. Must always be reported with the time horizon (e.g., NNT over 5 years). Sensitive to baseline risk: an NNT calculated in a trial population may not apply to a lower-risk population.',
+    associatedDesigns: ['RCT', 'Cohort'],
+    associatedAnalyses: ['Derived from absolute risk difference', 'Meta-analysis (pooled NNT)'],
     inputs: [
       { id: 'a',  label: 'Events in exposed (a)',     type: 'integer', min: 0 },
       { id: 'n1', label: 'Total exposed (n₁)',          type: 'integer', min: 1 },
@@ -230,6 +245,9 @@ var FORMULAS = [
     label: 'Hazard Ratio (HR) from Cox model',
     expression: 'HR = exp(β),  95% CI = exp(β ± 1.96 × SE)',
     description: 'Hazard ratio derived from a Cox proportional hazards model coefficient β and its standard error.',
+    useWhen: 'The standard effect measure in survival analysis. Use when individuals have variable follow-up times or when the outcome is a time-to-event endpoint with censoring. The Cox model makes no assumption about the baseline hazard (semi-parametric) and can adjust for multiple confounders simultaneously. The proportional hazards assumption (constant HR over time) should be verified. HR ≠ RR unless the hazard is constant over time.',
+    associatedDesigns: ['Cohort', 'RCT', 'Nested case-control', 'ACNU'],
+    associatedAnalyses: ['Cox proportional hazards regression', 'Kaplan–Meier curves', 'Log-rank test', 'Schoenfeld residuals (PH test)'],
     inputs: [
       { id: 'beta', label: 'Coefficient β',          type: 'float', placeholder: 'e.g. 0.693' },
       { id: 'se',   label: 'Standard error SE(β)',   type: 'float', min: 0, placeholder: 'e.g. 0.15' }
@@ -254,6 +272,9 @@ var FORMULAS = [
     label: 'Incidence Rate Ratio (IRR)',
     expression: 'IRR = IR₁ / IR₀ = (d₁/PT₁) / (d₀/PT₀)',
     description: 'Ratio of incidence rates between exposed and unexposed. Used in person-time cohort analyses.',
+    useWhen: 'Use in open cohorts or when individuals contribute variable amounts of person-time. More appropriate than RR when events can recur or when censoring is common. The natural output of Poisson and negative binomial regression. In SCCS and case-crossover designs, the IRR compares rates in risk periods to control periods within the same individual, eliminating time-fixed confounding.',
+    associatedDesigns: ['Cohort (person-time)', 'SCCS', 'Case-crossover', 'ACNU'],
+    associatedAnalyses: ['Poisson regression', 'Negative binomial regression', 'SCCS conditional Poisson regression'],
     inputs: [
       { id: 'd1',  label: 'Events in exposed (d₁)',          type: 'integer', min: 0 },
       { id: 'pt1', label: 'Person-time exposed (PT₁)',         type: 'float',   min: 0, placeholder: 'e.g. person-years' },
@@ -283,6 +304,9 @@ var FORMULAS = [
     label: 'Rate Difference',
     expression: 'RD = IR₁ − IR₀ = d₁/PT₁ − d₀/PT₀',
     description: 'Absolute difference in incidence rates between exposed and unexposed groups.',
+    useWhen: 'Use alongside IRR to express the absolute excess rate attributable to the exposure on the person-time scale. Particularly useful when comparing populations with the same baseline rate — a given IRR represents very different absolute impacts at different baseline rates. Report with a clear unit (e.g., events per 1000 person-years).',
+    associatedDesigns: ['Cohort (person-time)', 'SCCS'],
+    associatedAnalyses: ['Poisson regression (rate difference)', 'Direct computation from person-time data'],
     inputs: [
       { id: 'd1',  label: 'Events in exposed (d₁)',    type: 'integer', min: 0 },
       { id: 'pt1', label: 'Person-time exposed (PT₁)',  type: 'float',   min: 0 },
@@ -306,6 +330,9 @@ var FORMULAS = [
     label: 'Population Attributable Fraction (PAF)',
     expression: 'PAF = Pₑ(RR − 1) / [Pₑ(RR − 1) + 1]',
     description: 'Fraction of disease in the total population attributable to the exposure, accounting for how common the exposure is. Uses Miettinen\'s formula.',
+    useWhen: 'Use for public health priority-setting: which exposures, if eliminated, would reduce the overall disease burden most? PAF combines the RR (how harmful) and exposure prevalence (how common) — a modestly harmful but very prevalent exposure can have a higher PAF than a very harmful rare one. Requires an estimate of exposure prevalence in the source population, not just among cases.',
+    associatedDesigns: ['Population-based cohort', 'Case-control (with Levin formula)', 'Ecological surveillance'],
+    associatedAnalyses: ['Miettinen (1974) formula', 'Levin formula (from case-control)', 'Recycled predictions from logistic regression'],
     inputs: [
       { id: 'rr', label: 'Relative Risk (RR)',                          type: 'float', min: 0, placeholder: 'e.g. 2.5' },
       { id: 'pe', label: 'Prevalence of exposure in population (Pₑ)',   type: 'float', min: 0, placeholder: '0 – 1' }
@@ -329,6 +356,9 @@ var FORMULAS = [
     label: 'Attributable Fraction in Exposed (AFe)',
     expression: 'AFe = (RR − 1) / RR = 1 − 1/RR',
     description: 'Fraction of disease among the exposed that is attributable to the exposure. Also called the aetiologic fraction.',
+    useWhen: 'Use to estimate how much of the disease burden in the exposed subgroup is due to the exposure. Simpler than PAF because it requires only the RR — no population exposure prevalence needed. Useful for communicating the potential benefit of eliminating exposure among those already exposed (e.g., occupational hazard removal). Only valid for harmful exposures (RR > 1).',
+    associatedDesigns: ['Cohort', 'Case-control', 'RCT'],
+    associatedAnalyses: ['Derived directly from RR'],
     inputs: [
       { id: 'rr', label: 'Relative Risk (RR)', type: 'float', min: 0, placeholder: 'e.g. 3.0' }
     ],
@@ -345,6 +375,9 @@ var FORMULAS = [
     label: 'Preventable Fraction (PF)',
     expression: 'PF = 1 − RR  (for RR < 1)',
     description: 'Fraction of potential cases prevented by a protective exposure. RR must be < 1.',
+    useWhen: 'Use for protective exposures such as vaccines, screening, or preventive medications. PF = 0.40 means the exposure prevents 40% of the cases that would otherwise occur among the exposed. Used in vaccine efficacy reporting (VE = 1 − RR = PF). Analogous to AFe but for protective effects.',
+    associatedDesigns: ['RCT (vaccine trials)', 'Cohort', 'Case-control'],
+    associatedAnalyses: ['Derived directly from RR', 'Vaccine efficacy analysis'],
     inputs: [
       { id: 'rr', label: 'Relative Risk (RR)', type: 'float', min: 0, placeholder: 'e.g. 0.6' }
     ],
@@ -365,6 +398,9 @@ var FORMULAS = [
     label: 'Cumulative incidence (risk)',
     expression: 'CI = cases / N',
     description: 'Proportion of a population that develops the outcome over a specified time period. Requires closed cohort and complete follow-up.',
+    useWhen: 'Use to express the probability (risk) of developing the outcome over a fixed time period in a closed cohort. Directly interpretable as a probability. Requires that all individuals are followed for the full period (or that losses are ignorable). When censoring is present, use the Kaplan–Meier estimator instead. Underpins RR and RD calculations.',
+    associatedDesigns: ['Cohort (closed, complete follow-up)', 'RCT'],
+    associatedAnalyses: ['Kaplan–Meier estimator (with censoring)', 'Direct proportion (without censoring)', 'Competing risks (cumulative incidence function)'],
     inputs: [
       { id: 'cases', label: 'New cases',             type: 'integer', min: 0 },
       { id: 'n',     label: 'Population at risk (N)', type: 'integer', min: 1 }
@@ -383,6 +419,9 @@ var FORMULAS = [
     label: 'Incidence rate (person-time)',
     expression: 'IR = events / PT',
     description: 'Rate of new events per unit of person-time. Accommodates variable follow-up and open cohorts.',
+    useWhen: 'Use in open cohorts where individuals enter and leave the study at different times. Accommodates variable follow-up and censoring by using person-time as the denominator. Always report the unit (per 1000 person-years is conventional in pharmacoepidemiology). Required for IRR and rate difference calculations. In Danish register studies, person-time is computed from CPR dates.',
+    associatedDesigns: ['Cohort (open, person-time)', 'SCCS', 'Population surveillance'],
+    associatedAnalyses: ['Poisson regression', 'Negative binomial regression', 'Direct computation from register data'],
     inputs: [
       { id: 'events', label: 'New events (d)',      type: 'integer', min: 0 },
       { id: 'pt',     label: 'Total person-time',   type: 'float',   min: 0, placeholder: 'e.g. person-years' }
@@ -404,6 +443,9 @@ var FORMULAS = [
     label: 'Prevalence',
     expression: 'P = cases / N',
     description: 'Proportion of a population with the condition at a given point in time (point prevalence) or over a period (period prevalence).',
+    useWhen: 'Use to describe the current burden of a condition in a population — essential for healthcare planning and resource allocation. Prevalence is a snapshot, not a rate: it does not incorporate time. Prevalence = Incidence × Duration, so high prevalence can reflect either high incidence or long disease duration. In Danish register studies, point prevalence on a specific index date is simple to compute from CPR + diagnosis registers.',
+    associatedDesigns: ['Cross-sectional', 'Register-based prevalence survey'],
+    associatedAnalyses: ['Prevalence ratio (Poisson / log-binomial regression)', 'Prevalence odds ratio (logistic regression)', 'Age-standardised prevalence'],
     inputs: [
       { id: 'cases', label: 'Prevalent cases',        type: 'integer', min: 0 },
       { id: 'n',     label: 'Total population (N)',    type: 'integer', min: 1 }
@@ -422,6 +464,9 @@ var FORMULAS = [
     label: 'Odds (of disease)',
     expression: 'Odds = P / (1 − P) = cases / (N − cases)',
     description: 'Ratio of the probability of the event occurring to the probability of it not occurring.',
+    useWhen: 'Odds are the natural scale for logistic regression and case-control analyses. They are also used in Bayesian inference: post-test odds = pre-test odds × likelihood ratio. Odds are less intuitively interpretable than probability for clinical communication — convert to probability when reporting results to non-statistician audiences. At low prevalence, odds ≈ probability.',
+    associatedDesigns: ['Case-control', 'Cross-sectional'],
+    associatedAnalyses: ['Logistic regression', 'Bayesian inference', 'Fagan nomogram'],
     inputs: [
       { id: 'cases', label: 'Cases',        type: 'integer', min: 0 },
       { id: 'n',     label: 'Total (N)',    type: 'integer', min: 1 }
@@ -440,6 +485,9 @@ var FORMULAS = [
     label: 'Incidence proportion ↔ rate conversion',
     expression: 'CI = 1 − exp(−IR × t)',
     description: 'Convert between cumulative incidence (proportion) and incidence rate assuming a constant rate and exponential survival.',
+    useWhen: 'Use to convert between published risk estimates and rates when you have one measure but need the other for a calculation (e.g., back-calculating an IR from a reported 5-year risk, or projecting a 10-year risk from an annual rate). The conversion assumes a constant (exponential) hazard — valid for short time periods or diseases with stable rates; less valid for diseases with strong age effects or time-varying hazards.',
+    associatedDesigns: ['Any cohort or population study'],
+    associatedAnalyses: ['Exponential survival model', 'Sample size calculations', 'Power calculations'],
     inputs: [
       { id: 'ir', label: 'Incidence rate (IR)',          type: 'float', min: 0, placeholder: 'per person-year' },
       { id: 't',  label: 'Time period (t)',              type: 'float', min: 0, placeholder: 'years' }
@@ -471,6 +519,9 @@ var FORMULAS = [
     label: 'Sensitivity, Specificity, PPV, NPV (2×2 table)',
     expression: 'Se = TP/(TP+FN)   Sp = TN/(TN+FP)',
     description: 'Complete diagnostic accuracy metrics from a 2×2 table. PPV and NPV depend on prevalence; enter the true prevalence below for adjusted PPV/NPV.',
+    useWhen: 'Use to evaluate the accuracy of a diagnostic test, an administrative code algorithm, or a register-based outcome definition. Sensitivity and specificity are intrinsic to the test and do not depend on prevalence. PPV and NPV depend heavily on prevalence — a test with high Se/Sp will have low PPV in a low-prevalence population. In Danish register studies, ICD code algorithms are routinely validated against medical records; Se/Sp/PPV report the quality of these algorithms.',
+    associatedDesigns: ['Diagnostic accuracy study', 'Register validation study', 'Outcome algorithm validation'],
+    associatedAnalyses: ['ROC analysis (AUROC)', 'Receiver operating characteristic', 'Bayesian updating (post-test probability)'],
     inputs: [
       { id: 'tp', label: 'True positives (TP)',   type: 'integer', min: 0 },
       { id: 'fp', label: 'False positives (FP)',  type: 'integer', min: 0 },
@@ -523,6 +574,9 @@ var FORMULAS = [
     label: 'Bayesian post-test probability',
     expression: 'Post-odds = Pre-odds × LR   →   Post-prob = Post-odds / (1 + Post-odds)',
     description: 'Converts pre-test probability to post-test probability using a likelihood ratio (Fagan nomogram logic). Use LR+ for a positive test; LR− for a negative test.',
+    useWhen: 'Use when you know a test\'s LR+/LR− (from a 2×2 accuracy study) and want to estimate the post-test probability in a specific clinical population with a known prevalence (pre-test probability). LR+ > 10 or LR− < 0.1 produce clinically significant probability shifts. Also used in register research: to estimate the true prevalence of a condition given a code algorithm\'s Se/Sp and the expected prevalence in your cohort.',
+    associatedDesigns: ['Diagnostic accuracy study', 'Clinical decision-making', 'Register-based outcome validation'],
+    associatedAnalyses: ['Fagan nomogram', 'Bayesian inference', 'Decision analysis'],
     inputs: [
       { id: 'preprob', label: 'Pre-test probability (0–1)', type: 'float', min: 0, placeholder: '0 – 1, e.g. 0.15' },
       { id: 'lr',      label: 'Likelihood ratio (LR+ or LR−)', type: 'float', min: 0, placeholder: 'e.g. 8.5 or 0.12' }
@@ -552,6 +606,9 @@ var FORMULAS = [
     label: 'SMR / SIR',
     expression: 'SMR = O / E',
     description: 'Standardised Mortality (or Incidence) Ratio: observed events divided by expected events (computed from a reference population). CI uses Byar\'s Poisson approximation.',
+    useWhen: 'Use to compare the event rate in your study population to a reference population (e.g., the general Danish population), while controlling for differences in age and sex composition. SMR = 1 means the study population has the same mortality as the reference. Widely used in occupational cohort studies and cancer registry analyses. Expected events are computed as Σ(reference rate in stratum i × person-time in stratum i). Beware the healthy worker effect when comparing workers to the general population.',
+    associatedDesigns: ['Occupational cohort', 'Cancer registry', 'Register-based cohort', 'Prevalent condition cohort'],
+    associatedAnalyses: ['Indirect standardisation', 'Poisson regression (with reference rate offset)', 'Byar\'s Poisson CI'],
     inputs: [
       { id: 'obs', label: 'Observed events (O)', type: 'integer', min: 0 },
       { id: 'exp', label: 'Expected events (E)', type: 'float',   min: 0, placeholder: 'from reference rates × person-time' }
@@ -578,6 +635,9 @@ var FORMULAS = [
     label: 'Directly standardised rate (DSR)',
     expression: 'DSR = Σ(rᵢ × wᵢ) / Σwᵢ',
     description: 'Age-standardised rate using an external standard population. Enter one row per age stratum: observed rate in study population and standard population weight (size).',
+    useWhen: 'Use to compare rates between populations with different age distributions by applying the same standard population (e.g., the European Standard Population) to both. More robust than SMR for comparing two non-reference populations to each other. Widely used in national and international disease surveillance and in reporting cancer incidence rates. Requires knowing the age-specific rates in your study population (more data than SMR requires).',
+    associatedDesigns: ['Population surveillance', 'Register-based cohort comparison', 'Ecological comparison'],
+    associatedAnalyses: ['Direct standardisation', 'Age-standardised rate ratio (DSR₁/DSR₂)', 'European Standard Population weights'],
     dynamicRows: true,
     minRows: 2,
     maxRows: 10,
@@ -604,6 +664,9 @@ var FORMULAS = [
     label: 'Mantel–Haenszel pooled OR (stratified)',
     expression: 'OR_MH = Σ(aᵢdᵢ/nᵢ) / Σ(bᵢcᵢ/nᵢ)',
     description: 'Pooled odds ratio across strata (e.g. age groups), controlling for stratification variable. Enter one 2×2 table per stratum (a=cases exposed, b=cases unexposed, c=controls exposed, d=controls unexposed).',
+    useWhen: 'Use when you have a case-control or cohort study and want to adjust for a categorical confounder (e.g., age group) by stratifying the data and pooling stratum-specific ORs with the MH weights. Assumes a common OR across all strata (homogeneity / no interaction). If ORs differ across strata, report stratum-specific estimates and test for interaction rather than pooling. In meta-analysis, MH is the standard fixed-effect pooling method.',
+    associatedDesigns: ['Case-control', 'Nested case-control', 'Cohort', 'Meta-analysis (fixed effects)'],
+    associatedAnalyses: ['Mantel–Haenszel test', 'Breslow–Day test for heterogeneity', 'Cochran Q test', 'Fixed-effect meta-analysis'],
     dynamicRows: true,
     minRows: 2,
     maxRows: 8,
@@ -661,6 +724,9 @@ var FORMULAS = [
     label: "Cohen's kappa",
     expression: 'κ = (po − pe) / (1 − pe)',
     description: 'Measure of inter-rater agreement correcting for chance agreement. Enter a 2×2 agreement table: a = both raters +, d = both raters −, b/c = disagreements.',
+    useWhen: 'Use to assess reproducibility of a diagnostic classification, coding decision, or outcome algorithm between two raters or methods, correcting for the agreement expected by chance alone. In Danish register studies, kappa is standard for reporting the reliability of ICD code validation against medical records, or agreement between two coders reviewing patient charts. Weighted kappa is appropriate for ordinal outcomes. Interpretation (Landis & Koch): <0.2 slight, 0.21–0.40 fair, 0.41–0.60 moderate, 0.61–0.80 substantial, >0.80 almost perfect.',
+    associatedDesigns: ['Validation study', 'Reliability study', 'Register outcome algorithm evaluation'],
+    associatedAnalyses: ['Cohen\'s kappa', 'Weighted kappa (ordinal)', 'Intraclass correlation coefficient (continuous)'],
     inputs: [
       { id: 'a', label: 'Both positive (a)',       type: 'integer', min: 0 },
       { id: 'b', label: 'Rater1+ Rater2− (b)',    type: 'integer', min: 0 },
@@ -690,6 +756,9 @@ var FORMULAS = [
     label: 'Confidence interval for a proportion',
     expression: 'Wald: p ± 1.96√(p(1−p)/n)   Wilson: adjusted score CI',
     description: 'Two methods for the 95% CI of an observed proportion: Wald (simple, less accurate for extreme p or small n) and Wilson score (recommended).',
+    useWhen: 'Use whenever you need to report the uncertainty around any estimated proportion: prevalence, sensitivity, specificity, PPV, NPV, case fatality rate, or response rate. The Wilson score interval is recommended over the Wald in all situations — it maintains nominal coverage near p = 0 or p = 1 and for small samples where the Wald interval can extend outside [0, 1]. Use Clopper–Pearson (exact) for very small samples when conservative coverage is required.',
+    associatedDesigns: ['Any study reporting a proportion'],
+    associatedAnalyses: ['Descriptive statistics', 'Meta-analysis of proportions', 'Bayesian credible intervals'],
     inputs: [
       { id: 'x', label: 'Successes / events (x)',  type: 'integer', min: 0 },
       { id: 'n', label: 'Total observations (n)',   type: 'integer', min: 1 }
@@ -721,6 +790,9 @@ var FORMULAS = [
     label: 'E-value (unmeasured confounding)',
     expression: 'E = RR + √(RR × (RR − 1))  [for RR > 1]',
     description: 'Minimum strength of association that an unmeasured confounder must have with both exposure and outcome to explain away the observed effect. Enter the point estimate and, optionally, the CI bound closest to the null.',
+    useWhen: 'Report an E-value alongside every observational effect estimate as a standard sensitivity analysis for unmeasured confounding. The E-value answers: "How strong would a single unmeasured confounder need to be (on both the exposure–confounder and confounder–outcome associations) to fully explain away this result?" A larger E-value means the result is more robust. Also compute an E-value for the CI bound closest to the null — if that E-value is large, even the CI boundary is robust. Not a proof of causality, but a structured transparency tool.',
+    associatedDesigns: ['Any observational study'],
+    associatedAnalyses: ['Sensitivity analysis for unmeasured confounding', 'Quantitative bias analysis (Lash, Fox & Fink)', 'E-value for OR / HR (using approximation formulas)'],
     inputs: [
       { id: 'rr',    label: 'Risk/Rate Ratio (point estimate)', type: 'float', min: 0, placeholder: 'e.g. 2.0' },
       { id: 'rr_ci', label: 'CI bound closest to null (optional)', type: 'float', min: 0, placeholder: 'e.g. 1.3 or 0 to skip' }
