@@ -25,6 +25,7 @@ var state = {
       outcome: '',
       exposure: '',
       confounders: '',
+      confLinks: '',
       effMods: '',
       mediators: '',
       colliders: '',
@@ -735,28 +736,84 @@ function parseVarList(str) {
   return str.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; });
 }
 
-/* Parse confounders with optional hyphen edge syntax: "age, sex, age-SES"
-   → nodes: [age, sex, SES], edges: [{from:age, to:SES}]
-   Duplicate node names are merged automatically. */
 function parseConfounders(str) {
-  var nodes = [], edges = [], seen = {};
-  if (!str || !str.trim()) return {nodes: nodes, edges: edges};
-  str.split(',').forEach(function(item) {
-    item = item.trim();
-    if (!item) return;
-    var di = item.indexOf('-');
-    if (di > 0 && di < item.length - 1) {
-      var from = item.slice(0, di).trim();
-      var to   = item.slice(di + 1).trim();
-      if (!from || !to) return;
-      if (!seen[from]) { seen[from] = true; nodes.push(from); }
-      if (!seen[to])   { seen[to]   = true; nodes.push(to);   }
-      edges.push({from: from, to: to});
+  return parseVarList(str).slice(0, 8);
+}
+
+function hasCycle(directedEdges, nodes) {
+  var adj = {}, visited = {}, inStack = {};
+  nodes.forEach(function(n) { adj[n] = []; });
+  directedEdges.forEach(function(e) { if (adj[e.from]) adj[e.from].push(e.to); });
+  function dfs(n) {
+    if (inStack[n]) return true;
+    if (visited[n]) return false;
+    visited[n] = inStack[n] = true;
+    var nbrs = adj[n] || [];
+    for (var i = 0; i < nbrs.length; i++) { if (dfs(nbrs[i])) return true; }
+    inStack[n] = false;
+    return false;
+  }
+  for (var i = 0; i < nodes.length; i++) { if (dfs(nodes[i])) return true; }
+  return false;
+}
+
+function parseConfounderLinks(str, knownNodes) {
+  var edges = [], errors = [];
+  if (!str || !str.trim()) return {edges: edges, errors: errors};
+  var known = {};
+  knownNodes.forEach(function(n) { known[n] = true; });
+
+  str.split(',').forEach(function(token) {
+    token = token.trim();
+    if (!token) return;
+    var type, from, to;
+    if (token.indexOf(' > ') !== -1) {
+      type = 'directed';
+      var parts = token.split(' > ');
+      from = parts[0].trim(); to = parts[1].trim();
+    } else if (token.indexOf(' ~ ') !== -1) {
+      type = 'bidirected';
+      var parts2 = token.split(' ~ ');
+      from = parts2[0].trim(); to = parts2[1].trim();
     } else {
-      if (!seen[item]) { seen[item] = true; nodes.push(item); }
+      errors.push('Cannot parse "' + token + '" — use "A > B" or "A ~ B"');
+      return;
+    }
+    if (!from || !to) { errors.push('Empty node name in "' + token + '"'); return; }
+    if (from === to)  { errors.push('Self-loop: ' + from + ' cannot point to itself'); return; }
+    if (!known[from]) { errors.push('Unknown node "' + from + '" — add it to Confounders first'); return; }
+    if (!known[to])   { errors.push('Unknown node "' + to   + '" — add it to Confounders first'); return; }
+    edges.push({type: type, from: from, to: to});
+  });
+
+  /* Cycle check on directed edges only */
+  var directed = edges.filter(function(e) { return e.type === 'directed'; });
+  if (directed.length && hasCycle(directed, knownNodes)) {
+    errors.push('Directed cycle detected — edges must be acyclic (DAG rule)');
+    edges = edges.filter(function(e) { return e.type !== 'directed'; });
+  }
+
+  return {edges: edges, errors: errors};
+}
+
+function topoSortConfounders(nodes, directedEdges) {
+  var inDeg = {}, adj = {};
+  nodes.forEach(function(n) { inDeg[n] = 0; adj[n] = []; });
+  directedEdges.forEach(function(e) {
+    if (adj[e.from] !== undefined && inDeg[e.to] !== undefined) {
+      adj[e.from].push(e.to);
+      inDeg[e.to]++;
     }
   });
-  return {nodes: nodes, edges: edges};
+  var queue = nodes.filter(function(n) { return inDeg[n] === 0; });
+  var result = [];
+  while (queue.length) {
+    var n = queue.shift();
+    result.push(n);
+    adj[n].forEach(function(m) { if (--inDeg[m] === 0) queue.push(m); });
+  }
+  nodes.forEach(function(n) { if (result.indexOf(n) === -1) result.push(n); });
+  return result;
 }
 
 /* ── DAG SVG primitives ── */
@@ -887,7 +944,7 @@ function renderBuilderCard(def) {
   divider.className = 'builder-divider';
   inputs.appendChild(divider);
 
-  var confF = makeField('Confounders', 'Comma-separated; use name-name to add an edge (e.g. age-SES)', 'bld-conf', 'age, sex, age-SES, diabetes');
+  var confF = makeField('Confounders', 'Variable names only — comma-separated', 'bld-conf', 'e.g. age, sex, SES, diabetes');
   confF.inp.value = state.builder.vars.confounders;
   confF.inp.addEventListener('input', function() {
     state.builder.vars.confounders = confF.inp.value;
@@ -895,6 +952,20 @@ function renderBuilderCard(def) {
   });
   confF.field.appendChild(confF.inp);
   inputs.appendChild(confF.field);
+
+  var confLinksF = makeField('Confounder relationships', 'A > B = direct cause  ·  A ~ B = shared unmeasured cause', 'bld-conf-links', 'e.g. age > SES, smoking ~ obesity');
+  confLinksF.inp.value = state.builder.vars.confLinks;
+  confLinksF.inp.addEventListener('input', function() {
+    state.builder.vars.confLinks = confLinksF.inp.value;
+    updateBuilderOutput(def);
+  });
+  confLinksF.field.appendChild(confLinksF.inp);
+  var confLinksErr = document.createElement('div');
+  confLinksErr.className = 'edge-error';
+  confLinksErr.id = 'bld-conf-links-err';
+  confLinksErr.style.display = 'none';
+  confLinksF.field.appendChild(confLinksErr);
+  inputs.appendChild(confLinksF.field);
 
   var emF = makeField('Effect modifier(s)', 'Adds interaction term(s) — comma-separated', 'bld-em', 'sex, age_group');
   emF.inp.value = state.builder.vars.effMods;
@@ -1044,15 +1115,17 @@ function makeAccordion(id, title, populateFn) {
 }
 
 function currentBuilderVars() {
-  var confParsed = parseConfounders(state.builder.vars.confounders);
+  var cs = parseConfounders(state.builder.vars.confounders);
+  var linksParsed = parseConfounderLinks(state.builder.vars.confLinks, cs);
   return {
-    o:         state.builder.vars.outcome.trim() || 'Y',
-    x:         state.builder.vars.exposure.trim() || 'X',
-    cs:        confParsed.nodes.slice(0, 8),
-    confEdges: confParsed.edges,
-    ms:        parseVarList(state.builder.vars.effMods).slice(0, 3),
-    meds:      parseVarList(state.builder.vars.mediators).slice(0, 3),
-    cols:      parseVarList(state.builder.vars.colliders).slice(0, 3)
+    o:          state.builder.vars.outcome.trim() || 'Y',
+    x:          state.builder.vars.exposure.trim() || 'X',
+    cs:         cs,
+    confLinks:  linksParsed.edges,
+    confErrors: linksParsed.errors,
+    ms:         parseVarList(state.builder.vars.effMods).slice(0, 3),
+    meds:       parseVarList(state.builder.vars.mediators).slice(0, 3),
+    cols:       parseVarList(state.builder.vars.colliders).slice(0, 3)
   };
 }
 
@@ -1060,6 +1133,13 @@ function currentBuilderVars() {
 function updateBuilderOutput(def) {
   var rv = currentBuilderVars();
   var o = rv.o, x = rv.x, cs = rv.cs, ms = rv.ms, meds = rv.meds, cols = rv.cols;
+
+  /* Confounder relationship errors */
+  var errEl = document.getElementById('bld-conf-links-err');
+  if (errEl) {
+    errEl.textContent = rv.confErrors.join(' · ');
+    errEl.style.display = rv.confErrors.length ? '' : 'none';
+  }
 
   /* Formula */
   var formulaEl = document.getElementById('bld-formula-block');
@@ -1071,7 +1151,7 @@ function updateBuilderOutput(def) {
 
   /* DAG + advice */
   var dagWrap = document.getElementById('bld-dag-wrap');
-  if (dagWrap) dagWrap.innerHTML = buildDAGSvg(x, o, cs, ms, meds, cols, rv.confEdges);
+  if (dagWrap) dagWrap.innerHTML = buildDAGSvg(x, o, cs, ms, meds, cols, rv.confLinks);
   var dagAdviceEl = document.getElementById('bld-dag-advice');
   if (dagAdviceEl) dagAdviceEl.innerHTML = buildAdjustmentAdvice(x, o, meds, cols);
 
@@ -1080,12 +1160,14 @@ function updateBuilderOutput(def) {
   if (rcodeEl) rcodeEl.textContent = def.rCode(o, x, cs, ms);
 }
 
-function buildDAGSvg(x, o, cs, ms, meds, cols, confEdges) {
+function buildDAGSvg(x, o, cs, ms, meds, cols, confLinks) {
   meds = meds || [];
   cols = cols || [];
-  confEdges = confEdges || [];
+  confLinks = confLinks || [];
 
-  var dCs   = cs.slice(0, 5);
+  /* Apply topological sort so causally earlier confounders sit left */
+  var directedOnly = confLinks.filter(function(e) { return e.type === 'directed'; });
+  var dCs   = topoSortConfounders(cs.slice(0, 5), directedOnly);
   var dMs   = ms.slice(0, 2);
   var dMeds = meds.slice(0, 3);
   var dCols = cols.slice(0, 3);
@@ -1149,8 +1231,8 @@ function buildDAGSvg(x, o, cs, ms, meds, cols, confEdges) {
   dCols.forEach(function(c) { nodeR[c] = 26; });  /* collider:     52px wide */
   dMs.forEach(function(m) { nodeR[m] = 25; });    /* eff.modifier: 50px wide */
 
-  /* Filter confounder edges — both endpoints must be in pos */
-  var validConfEdges = confEdges.filter(function(e) { return pos[e.from] && pos[e.to]; });
+  /* Filter confounder links — both endpoints must be in pos */
+  var validLinks = confLinks.filter(function(e) { return pos[e.from] && pos[e.to]; });
 
   /* ── SVG: arrows buffer (aB) drawn first, nodes buffer (nB) on top ── */
   var aB = '', nB = '';
@@ -1169,6 +1251,8 @@ function buildDAGSvg(x, o, cs, ms, meds, cols, confEdges) {
     '<polygon points="0 0,7 2.5,0 5" fill="var(--svg-period)" opacity="0.85"/></marker>' +
     '<marker id="dagac" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
     '<polygon points="0 0,7 2.5,0 5" fill="var(--svg-event)" opacity="0.75"/></marker>' +
+    '<marker id="daga-rev" markerWidth="7" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">' +
+    '<polygon points="7 0,0 2.5,7 5" fill="var(--svg-period)" opacity="0.85"/></marker>' +
     '</defs>';
 
   /* ── CONFOUNDERS arrows ── */
@@ -1223,26 +1307,25 @@ function buildDAGSvg(x, o, cs, ms, meds, cols, confEdges) {
     });
   }
 
-  /* ── CONFOUNDER EDGES from hyphen syntax (dashed gray, same style as confounder arrows) ── */
-  validConfEdges.forEach(function(e) {
+  /* ── INTER-CONFOUNDER EDGES (directed = solid arc; bidirected = dashed purple double-headed) ── */
+  validLinks.forEach(function(e) {
     var fp = pos[e.from], tp = pos[e.to];
-    var dx = tp.x - fp.x, dy = tp.y - fp.y;
-    var len = Math.sqrt(dx*dx + dy*dy);
-    if (len < 8) return;
+    var dx = tp.x - fp.x;
+    if (Math.abs(dx) < 4) return;
     var rF = nodeR[e.from] || 26, rT = nodeR[e.to] || 26;
-    if (Math.abs(dy) < 20) {
-      /* same row → arc above (for confounders) */
-      var mx = (fp.x + tp.x) / 2;
-      var cy2 = fp.y <= confY + 5 ? 10 : fp.y + 30;
-      var x1 = fp.x + (dx > 0 ? rF : -rF);
-      var x2 = tp.x + (dx > 0 ? -rT :  rT);
-      aB += '<path d="M '+x1+','+fp.y+' Q '+mx+','+cy2+' '+x2+','+tp.y+'"' +
-        ' fill="none" stroke="currentColor" stroke-width="1.3" opacity="0.55"' +
-        ' stroke-dasharray="4,3" marker-end="url(#daga)"/>';
+    var x1 = fp.x + (dx > 0 ?  rF : -rF);
+    var x2 = tp.x + (dx > 0 ? -rT :  rT);
+    var mx = (fp.x + tp.x) / 2;
+    var arcCtrlY = confY - 28;   /* control point well above node row */
+    if (e.type === 'directed') {
+      aB += '<path d="M '+x1+','+fp.y+' Q '+mx+','+arcCtrlY+' '+x2+','+tp.y+'"' +
+        ' fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.75"' +
+        ' marker-end="url(#daga)"/>';
     } else {
-      var nx = dx/len, ny = dy/len;
-      aB += dagArrow(fp.x+nx*rF, fp.y+ny*rF, tp.x-nx*rT, tp.y-ny*rT,
-        'daga', 'currentColor', '1.3', '0.55', '4,3');
+      aB += '<path d="M '+x1+','+fp.y+' Q '+mx+','+arcCtrlY+' '+x2+','+tp.y+'"' +
+        ' fill="none" stroke="var(--svg-period)" stroke-width="1.5" opacity="0.8"' +
+        ' stroke-dasharray="4,3"' +
+        ' marker-start="url(#daga-rev)" marker-end="url(#dagam)"/>';
     }
   });
 
