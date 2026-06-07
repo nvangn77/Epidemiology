@@ -18,7 +18,17 @@ var state = {
     dynamicRows: []
   },
   design: { selectedId: null },
-  bias:   { selectedId: null }
+  bias:   { selectedId: null },
+  builder: {
+    modelId: null,
+    vars: {
+      outcome: '',
+      exposure: '',
+      confounders: '',
+      effMods: ''
+    },
+    accordionOpen: {}
+  }
 };
 
 /* =========================================================
@@ -716,6 +726,377 @@ function renderBiasCard(def) {
 }
 
 /* =========================================================
+   MODEL BUILDER MODULE
+   ========================================================= */
+function parseVarList(str) {
+  if (!str || !str.trim()) return [];
+  return str.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; });
+}
+
+function buildBuilderDropdown() {
+  var sel = document.getElementById('builder-model-select');
+  var categories = {};
+  var categoryOrder = ['continuous', 'binary', 'time-to-event', 'count', 'causal', 'self-controlled'];
+  var categoryLabels = {
+    'continuous':     'Continuous outcomes',
+    'binary':         'Binary outcomes',
+    'time-to-event':  'Time-to-event',
+    'count':          'Count / rate outcomes',
+    'causal':         'Causal inference',
+    'self-controlled':'Self-controlled designs'
+  };
+
+  MODELS.forEach(function(m) {
+    if (!categories[m.category]) categories[m.category] = [];
+    categories[m.category].push(m);
+  });
+
+  var firstId = null;
+  categoryOrder.forEach(function(cat) {
+    if (!categories[cat]) return;
+    var grp = document.createElement('optgroup');
+    grp.label = categoryLabels[cat] || cat;
+    categories[cat].forEach(function(m) {
+      var opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.label;
+      grp.appendChild(opt);
+      if (!firstId) firstId = m.id;
+    });
+    sel.appendChild(grp);
+  });
+
+  sel.addEventListener('change', function() { selectBuilderModel(sel.value); });
+  if (firstId) selectBuilderModel(firstId);
+}
+
+function selectBuilderModel(id) {
+  state.builder.modelId = id;
+  state.builder.accordionOpen = {};
+  var def = MODELS.filter(function(m) { return m.id === id; })[0];
+  if (!def) return;
+  renderBuilderCard(def);
+}
+
+function renderBuilderCard(def) {
+  var area = document.getElementById('builder-area');
+  area.innerHTML = '';
+
+  var layout = document.createElement('div');
+  layout.className = 'builder-layout';
+
+  /* ---- LEFT: inputs ---- */
+  var inputs = document.createElement('div');
+  inputs.className = 'builder-inputs';
+
+  function makeField(labelText, subLabel, inputId, placeholder) {
+    var field = document.createElement('div');
+    field.className = 'builder-field';
+    var lbl = document.createElement('label');
+    lbl.className = 'builder-label';
+    lbl.setAttribute('for', inputId);
+    lbl.textContent = labelText;
+    field.appendChild(lbl);
+    if (subLabel) {
+      var sub = document.createElement('div');
+      sub.className = 'builder-sublabel';
+      sub.textContent = subLabel;
+      field.appendChild(sub);
+    }
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'builder-input';
+    inp.id = inputId;
+    inp.placeholder = placeholder || '';
+    inp.setAttribute('autocomplete', 'off');
+    inp.setAttribute('autocorrect', 'off');
+    inp.setAttribute('spellcheck', 'false');
+    return { field: field, inp: inp };
+  }
+
+  var outcomeF = makeField('Outcome variable', 'The dependent variable (Y)', 'bld-outcome', 'e.g. death, hospitalisation');
+  outcomeF.inp.value = state.builder.vars.outcome;
+  outcomeF.inp.addEventListener('input', function() {
+    state.builder.vars.outcome = outcomeF.inp.value;
+    updateBuilderOutput(def);
+  });
+  outcomeF.field.appendChild(outcomeF.inp);
+  inputs.appendChild(outcomeF.field);
+
+  var exposureF = makeField('Exposure / treatment', 'The primary predictor (X)', 'bld-exposure', 'e.g. statin, metformin');
+  exposureF.inp.value = state.builder.vars.exposure;
+  exposureF.inp.addEventListener('input', function() {
+    state.builder.vars.exposure = exposureF.inp.value;
+    updateBuilderOutput(def);
+  });
+  exposureF.field.appendChild(exposureF.inp);
+  inputs.appendChild(exposureF.field);
+
+  var divider = document.createElement('div');
+  divider.className = 'builder-divider';
+  inputs.appendChild(divider);
+
+  var confF = makeField('Confounders', 'Comma-separated list', 'bld-conf', 'age, sex, diabetes, CCI');
+  confF.inp.value = state.builder.vars.confounders;
+  confF.inp.addEventListener('input', function() {
+    state.builder.vars.confounders = confF.inp.value;
+    updateBuilderOutput(def);
+  });
+  confF.field.appendChild(confF.inp);
+  inputs.appendChild(confF.field);
+
+  var emF = makeField('Effect modifier(s)', 'Comma-separated; adds interaction term(s)', 'bld-em', 'sex, age_group');
+  emF.inp.value = state.builder.vars.effMods;
+  emF.inp.addEventListener('input', function() {
+    state.builder.vars.effMods = emF.inp.value;
+    updateBuilderOutput(def);
+  });
+  emF.field.appendChild(emF.inp);
+  inputs.appendChild(emF.field);
+
+  layout.appendChild(inputs);
+
+  /* ---- RIGHT: output ---- */
+  var output = document.createElement('div');
+  output.className = 'builder-output';
+
+  /* Meta chips */
+  var metaStrip = document.createElement('div');
+  metaStrip.className = 'builder-meta-strip';
+  metaStrip.innerHTML =
+    '<span class="builder-meta-chip"><strong>Outcome</strong> ' + escHtml(def.outcomeType) + '</span>' +
+    '<span class="builder-meta-chip"><strong>Effect</strong> ' + escHtml(def.effectMeasure) + '</span>' +
+    '<span class="builder-meta-chip"><strong>Link</strong> ' + escHtml(def.link) + '</span>';
+  output.appendChild(metaStrip);
+
+  /* Description */
+  var desc = document.createElement('div');
+  desc.className = 'builder-desc';
+  desc.textContent = def.useWhen;
+  output.appendChild(desc);
+
+  /* Formula */
+  var formulaSec = document.createElement('div');
+  formulaSec.innerHTML = '<div class="builder-section-label">Model equation</div>';
+  var formulaBlock = document.createElement('div');
+  formulaBlock.className = 'builder-formula-block';
+  formulaBlock.id = 'bld-formula-block';
+  formulaSec.appendChild(formulaBlock);
+  var effectNote = document.createElement('div');
+  effectNote.className = 'builder-effect-note';
+  effectNote.id = 'bld-effect-note';
+  formulaSec.appendChild(effectNote);
+  output.appendChild(formulaSec);
+
+  /* Visuals: DAG + output illustration */
+  var visuals = document.createElement('div');
+  visuals.className = 'builder-visuals';
+
+  var dagPanel = document.createElement('div');
+  dagPanel.className = 'builder-vis-panel';
+  dagPanel.innerHTML = '<div class="builder-section-label">Directed Acyclic Graph</div>';
+  var dagSvgWrap = document.createElement('div');
+  dagSvgWrap.id = 'bld-dag-wrap';
+  dagPanel.appendChild(dagSvgWrap);
+  visuals.appendChild(dagPanel);
+
+  var illPanel = document.createElement('div');
+  illPanel.className = 'builder-vis-panel';
+  illPanel.innerHTML = '<div class="builder-section-label">Typical output</div>' + def.outputSvg;
+  visuals.appendChild(illPanel);
+
+  output.appendChild(visuals);
+
+  /* Accordion: Assumptions */
+  output.appendChild(makeAccordion('assumptions-' + def.id, 'Assumptions', function(body) {
+    var ul = document.createElement('ul');
+    ul.className = 'builder-assumptions-list';
+    def.assumptions.forEach(function(a) {
+      var li = document.createElement('li');
+      li.textContent = a;
+      ul.appendChild(li);
+    });
+    body.appendChild(ul);
+  }));
+
+  /* Accordion: R code */
+  output.appendChild(makeAccordion('rcode-' + def.id, 'R code template', function(body) {
+    var pre = document.createElement('pre');
+    pre.className = 'builder-rcode-block';
+    pre.id = 'bld-rcode-block';
+    body.appendChild(pre);
+  }));
+
+  /* Danish context */
+  var danish = document.createElement('div');
+  danish.className = 'builder-danish-callout';
+  danish.innerHTML = '<div class="builder-danish-label">Register / Danish pharmacoepi context</div>' + escHtml(def.danishContext);
+  output.appendChild(danish);
+
+  layout.appendChild(output);
+  area.appendChild(layout);
+
+  /* Populate dynamic fields */
+  updateBuilderOutput(def);
+}
+
+function makeAccordion(id, title, populateFn) {
+  var wrap = document.createElement('div');
+  wrap.className = 'builder-accordion';
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'builder-accordion-btn';
+  btn.setAttribute('aria-expanded', state.builder.accordionOpen[id] ? 'true' : 'false');
+  btn.setAttribute('aria-controls', 'acc-body-' + id);
+  btn.innerHTML = escHtml(title) + '<span class="builder-accordion-caret" aria-hidden="true">▾</span>';
+
+  var body = document.createElement('div');
+  body.className = 'builder-accordion-body' + (state.builder.accordionOpen[id] ? ' open' : '');
+  body.id = 'acc-body-' + id;
+  populateFn(body);
+
+  btn.addEventListener('click', function() {
+    var isOpen = state.builder.accordionOpen[id];
+    state.builder.accordionOpen[id] = !isOpen;
+    btn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+    body.classList.toggle('open', !isOpen);
+  });
+
+  wrap.appendChild(btn);
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function updateBuilderOutput(def) {
+  var o = state.builder.vars.outcome.trim() || 'Y';
+  var x = state.builder.vars.exposure.trim() || 'X';
+  var cs = parseVarList(state.builder.vars.confounders).slice(0, 8);
+  var ms = parseVarList(state.builder.vars.effMods).slice(0, 3);
+
+  /* Formula */
+  var formulaEl = document.getElementById('bld-formula-block');
+  if (formulaEl) formulaEl.textContent = def.buildFormula(o, x, cs, ms);
+
+  /* Effect note */
+  var noteEl = document.getElementById('bld-effect-note');
+  if (noteEl) noteEl.textContent = def.effectNote(x, o);
+
+  /* DAG */
+  var dagWrap = document.getElementById('bld-dag-wrap');
+  if (dagWrap) dagWrap.innerHTML = buildDAGSvg(x, o, cs, ms);
+
+  /* R code */
+  var rcodeEl = document.getElementById('bld-rcode-block');
+  if (rcodeEl) rcodeEl.textContent = def.rCode(o, x, cs, ms);
+}
+
+function buildDAGSvg(x, o, cs, ms) {
+  var W = 400, H = 210;
+  var expX = 88, expY = 110;
+  var outX = 312, outY = 110;
+
+  /* Limit nodes for readability */
+  var displayCs = cs.slice(0, 5);
+  var displayMs = ms.slice(0, 2);
+
+  var hasCs = displayCs.length > 0;
+  var hasMs = displayMs.length > 0;
+
+  var svg = '<svg role="img" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto">' +
+    '<title>Directed acyclic graph</title>' +
+    '<desc>DAG showing relationships between ' + escHtml(x) + ', ' + escHtml(o) +
+    (hasCs ? ', confounders' : '') + (hasMs ? ', and effect modifiers' : '') + '</desc>' +
+    '<defs>' +
+    '<marker id="dag-a" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
+    '<polygon points="0 0, 7 2.5, 0 5" fill="currentColor" opacity="0.65"/></marker>' +
+    '<marker id="dag-am" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
+    '<polygon points="0 0, 7 2.5, 0 5" fill="var(--svg-period)" opacity="0.8"/></marker>' +
+    '</defs>';
+
+  /* Exposure → Outcome main arrow */
+  svg += '<line x1="' + (expX+38) + '" y1="' + expY + '" x2="' + (outX-38) + '" y2="' + outY +
+    '" stroke="currentColor" stroke-width="2" opacity="0.75" marker-end="url(#dag-a)"/>';
+
+  /* Confounders */
+  if (hasCs) {
+    var cCount = displayCs.length;
+    var cGap = Math.min(72, (W - 60) / (cCount + 1));
+    var cTotalW = cGap * (cCount - 1);
+    var cLeft = (W - cTotalW) / 2;
+
+    displayCs.forEach(function(c, i) {
+      var cx = cLeft + i * cGap;
+      var cy = 32;
+      var cLbl = c.length > 9 ? c.slice(0, 8) + '…' : c;
+
+      /* C → Exposure */
+      svg += '<line x1="' + cx + '" y1="' + (cy + 14) + '" x2="' + (expX + 12) + '" y2="' + (expY - 14) +
+        '" stroke="currentColor" stroke-width="1.4" opacity="0.5" stroke-dasharray="4,3" marker-end="url(#dag-a)"/>';
+      /* C → Outcome */
+      svg += '<line x1="' + cx + '" y1="' + (cy + 14) + '" x2="' + (outX - 12) + '" y2="' + (outY - 14) +
+        '" stroke="currentColor" stroke-width="1.4" opacity="0.5" stroke-dasharray="4,3" marker-end="url(#dag-a)"/>';
+
+      /* C node */
+      svg += '<rect x="' + (cx - 24) + '" y="' + (cy - 13) + '" width="48" height="24" rx="5"' +
+        ' fill="var(--bg)" stroke="currentColor" stroke-width="1.4" opacity="0.8"/>';
+      svg += '<text x="' + cx + '" y="' + (cy + 4) + '" text-anchor="middle" font-size="9"' +
+        ' fill="currentColor" font-family="system-ui,sans-serif">' + escHtml(cLbl) + '</text>';
+    });
+
+    svg += '<text x="' + W/2 + '" y="11" text-anchor="middle" font-size="8" fill="currentColor"' +
+      ' opacity="0.5" font-family="system-ui,sans-serif">Confounders</text>';
+  }
+
+  /* Effect modifiers */
+  if (hasMs) {
+    var midX = (expX + outX) / 2;
+    var midY = expY;
+    var mCount = displayMs.length;
+    var mGap = 80;
+    var mLeft = midX - mGap * (mCount - 1) / 2;
+
+    displayMs.forEach(function(m, i) {
+      var mx = mLeft + i * mGap;
+      var my = 185;
+      var mLbl = m.length > 9 ? m.slice(0, 8) + '…' : m;
+
+      /* M → midpoint of E→O arrow */
+      svg += '<line x1="' + mx + '" y1="' + (my - 14) + '" x2="' + midX + '" y2="' + (midY + 10) +
+        '" stroke="var(--svg-period)" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#dag-am)"/>';
+
+      svg += '<rect x="' + (mx - 24) + '" y="' + (my - 13) + '" width="48" height="24" rx="5"' +
+        ' fill="var(--bg)" stroke="var(--svg-period)" stroke-width="1.4"/>';
+      svg += '<text x="' + mx + '" y="' + (my + 4) + '" text-anchor="middle" font-size="9"' +
+        ' fill="var(--svg-period)" font-family="system-ui,sans-serif">' + escHtml(mLbl) + '</text>';
+    });
+
+    svg += '<text x="' + W/2 + '" y="' + (H - 2) + '" text-anchor="middle" font-size="8"' +
+      ' fill="var(--svg-period)" opacity="0.7" font-family="system-ui,sans-serif">Effect modifier(s) → interaction</text>';
+  }
+
+  /* Exposure node */
+  var xLbl = x.length > 11 ? x.slice(0, 10) + '…' : x;
+  svg += '<rect x="' + (expX - 38) + '" y="' + (expY - 17) + '" width="76" height="34" rx="7"' +
+    ' fill="var(--svg-exposed)" opacity="0.15" stroke="var(--svg-exposed)" stroke-width="2"/>';
+  svg += '<text x="' + expX + '" y="' + (expY + 5) + '" text-anchor="middle" font-size="10"' +
+    ' fill="var(--svg-exposed)" font-weight="600" font-family="system-ui,sans-serif">' + escHtml(xLbl) + '</text>';
+  svg += '<text x="' + expX + '" y="' + (expY + 24) + '" text-anchor="middle" font-size="8"' +
+    ' fill="var(--svg-exposed)" opacity="0.7" font-family="system-ui,sans-serif">Exposure</text>';
+
+  /* Outcome node */
+  var oLbl = o.length > 11 ? o.slice(0, 10) + '…' : o;
+  svg += '<rect x="' + (outX - 38) + '" y="' + (outY - 17) + '" width="76" height="34" rx="7"' +
+    ' fill="var(--svg-event)" opacity="0.15" stroke="var(--svg-event)" stroke-width="2"/>';
+  svg += '<text x="' + outX + '" y="' + (outY + 5) + '" text-anchor="middle" font-size="10"' +
+    ' fill="var(--svg-event)" font-weight="600" font-family="system-ui,sans-serif">' + escHtml(oLbl) + '</text>';
+  svg += '<text x="' + outX + '" y="' + (outY + 24) + '" text-anchor="middle" font-size="8"' +
+    ' fill="var(--svg-event)" opacity="0.7" font-family="system-ui,sans-serif">Outcome</text>';
+
+  svg += '</svg>';
+  return svg;
+}
+
+/* =========================================================
    INIT
    ========================================================= */
 document.addEventListener('DOMContentLoaded', function() {
@@ -727,11 +1108,12 @@ document.addEventListener('DOMContentLoaded', function() {
   buildFormulaDropdown();
   buildDesignDropdown();
   buildBiasDropdown();
+  buildBuilderDropdown();
 
   /* Restore last active tab */
   var lastTab = null;
   try { lastTab = sessionStorage.getItem('epi-tab'); } catch(e) {}
-  if (lastTab && ['formulas', 'designs', 'biases'].indexOf(lastTab) !== -1) {
+  if (lastTab && ['formulas', 'designs', 'biases', 'builder'].indexOf(lastTab) !== -1) {
     showTab(lastTab);
     var sel = document.getElementById('tab-' + lastTab);
     if (sel) document.getElementById(sel.id);

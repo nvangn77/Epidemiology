@@ -895,6 +895,282 @@ code, .formula-expr {
 }
 
 /* =========================================================
+   Model builder
+   ========================================================= */
+.builder-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 700px) {
+  .builder-layout { grid-template-columns: 1fr; }
+}
+
+/* Left column: inputs */
+.builder-inputs {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.builder-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.builder-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.builder-sublabel {
+  font-size: 0.73rem;
+  color: var(--text-faint);
+  margin-top: -0.15rem;
+}
+
+.builder-input {
+  padding: 0.42rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  width: 100%;
+}
+
+.builder-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-focus);
+}
+
+.builder-input::placeholder { color: var(--text-faint); }
+
+.builder-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 0.25rem 0;
+}
+
+/* Right column: output */
+.builder-output {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Model meta strip */
+.builder-meta-strip {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+}
+
+.builder-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 100px;
+  font-size: 0.77rem;
+  background: var(--tag-bg);
+  color: var(--tag-text);
+  border: 1px solid var(--border-light);
+}
+
+.builder-meta-chip strong {
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Description / useWhen */
+.builder-desc {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+}
+
+/* Formula block */
+.builder-section-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  margin-bottom: 0.4rem;
+}
+
+.builder-formula-block {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', 'SF Mono', monospace;
+  font-size: 0.88rem;
+  color: var(--accent-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.7;
+  overflow-x: auto;
+}
+
+.builder-effect-note {
+  margin-top: 0.5rem;
+  font-size: 0.825rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-light);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* Two-panel row: DAG + Output illustration */
+.builder-visuals {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 580px) {
+  .builder-visuals { grid-template-columns: 1fr; }
+}
+
+.builder-vis-panel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.builder-vis-panel svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  color: var(--text);
+}
+
+/* Accordion (assumptions + R code) */
+.builder-accordion {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.builder-accordion + .builder-accordion {
+  margin-top: 0.5rem;
+}
+
+.builder-accordion-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.65rem 1rem;
+  background: var(--bg-subtle);
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  gap: 0.5rem;
+}
+
+.builder-accordion-btn:hover { background: var(--bg-raised); }
+
+.builder-accordion-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.builder-accordion-caret {
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+
+.builder-accordion-btn[aria-expanded="true"] .builder-accordion-caret {
+  transform: rotate(180deg);
+}
+
+.builder-accordion-body {
+  display: none;
+  padding: 0.75rem 1rem;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+
+.builder-accordion-body.open { display: block; }
+
+.builder-assumptions-list {
+  margin: 0;
+  padding-left: 1.3rem;
+}
+
+.builder-assumptions-list li {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+  line-height: 1.5;
+}
+
+.builder-assumptions-list li:last-child { margin-bottom: 0; }
+
+/* R code block */
+.builder-rcode-block {
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', 'SF Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text);
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.6;
+}
+
+/* Danish context callout in builder */
+.builder-danish-callout {
+  background: var(--callout-bg);
+  border: 1px solid var(--callout-border);
+  border-radius: var(--radius);
+  padding: 0.7rem 1rem;
+  font-size: 0.85rem;
+  color: var(--callout-text);
+  line-height: 1.55;
+}
+
+.builder-danish-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.3rem;
+  opacity: 0.8;
+}
+
+/* =========================================================
    Footer
    ========================================================= */
 .site-footer {

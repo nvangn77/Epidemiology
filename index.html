@@ -35,6 +35,10 @@
               aria-controls="panel-biases" aria-selected="false" tabindex="-1">
         Bias reference
       </button>
+      <button class="tab-btn" role="tab" id="tab-builder"
+              aria-controls="panel-builder" aria-selected="false" tabindex="-1">
+        Build your model
+      </button>
     </nav>
 
     <main id="main-content">
@@ -67,6 +71,15 @@
           <div id="bias-card" class="card-area"></div>
         </div>
       </section>
+      <section role="tabpanel" id="panel-builder" aria-labelledby="tab-builder" hidden>
+        <div class="panel-inner">
+          <div class="select-row">
+            <label for="builder-model-select" class="select-label">Statistical model</label>
+            <select id="builder-model-select" class="select-field"></select>
+          </div>
+          <div id="builder-area" class="card-area"></div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -80,6 +93,7 @@
   <script src="data/formulas.js"></script>
   <script src="data/designs.js"></script>
   <script src="data/biases.js"></script>
+  <script src="data/models.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
