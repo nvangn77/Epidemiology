@@ -1150,6 +1150,48 @@ code, .formula-expr {
   line-height: 1.6;
 }
 
+/* DAG adjustment-advice panel */
+.dag-advice {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.dag-advice-item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.65rem;
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.dag-advice-icon { flex-shrink: 0; line-height: 1.4; }
+
+.dag-advice-med {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border: 1px solid var(--warn-border);
+}
+
+.dag-advice-col {
+  background: var(--error-bg);
+  color: var(--error-text);
+  border: 1px solid var(--error-border);
+}
+
+.dag-code {
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', 'SF Mono', monospace;
+  font-size: 0.85em;
+  padding: 0.05em 0.25em;
+  border-radius: 3px;
+  background: rgba(0,0,0,0.08);
+}
+
+html.dark .dag-code { background: rgba(255,255,255,0.1); }
+
 /* Danish context callout in builder */
 .builder-danish-callout {
   background: var(--callout-bg);

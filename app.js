@@ -25,7 +25,9 @@ var state = {
       outcome: '',
       exposure: '',
       confounders: '',
-      effMods: ''
+      effMods: '',
+      mediators: '',
+      colliders: ''
     },
     accordionOpen: {}
   }
@@ -845,7 +847,7 @@ function renderBuilderCard(def) {
   confF.field.appendChild(confF.inp);
   inputs.appendChild(confF.field);
 
-  var emF = makeField('Effect modifier(s)', 'Comma-separated; adds interaction term(s)', 'bld-em', 'sex, age_group');
+  var emF = makeField('Effect modifier(s)', 'Adds interaction term(s) — comma-separated', 'bld-em', 'sex, age_group');
   emF.inp.value = state.builder.vars.effMods;
   emF.inp.addEventListener('input', function() {
     state.builder.vars.effMods = emF.inp.value;
@@ -853,6 +855,28 @@ function renderBuilderCard(def) {
   });
   emF.field.appendChild(emF.inp);
   inputs.appendChild(emF.field);
+
+  var divider2 = document.createElement('div');
+  divider2.className = 'builder-divider';
+  inputs.appendChild(divider2);
+
+  var medF = makeField('Mediator(s)', 'On the causal pathway E→M→O — comma-separated', 'bld-med', 'e.g. LDL, inflammation');
+  medF.inp.value = state.builder.vars.mediators;
+  medF.inp.addEventListener('input', function() {
+    state.builder.vars.mediators = medF.inp.value;
+    updateBuilderOutput(def);
+  });
+  medF.field.appendChild(medF.inp);
+  inputs.appendChild(medF.field);
+
+  var colF = makeField('Collider(s)', 'Caused by both E and O — comma-separated', 'bld-col', 'e.g. hospitalisation');
+  colF.inp.value = state.builder.vars.colliders;
+  colF.inp.addEventListener('input', function() {
+    state.builder.vars.colliders = colF.inp.value;
+    updateBuilderOutput(def);
+  });
+  colF.field.appendChild(colF.inp);
+  inputs.appendChild(colF.field);
 
   layout.appendChild(inputs);
 
@@ -898,6 +922,9 @@ function renderBuilderCard(def) {
   var dagSvgWrap = document.createElement('div');
   dagSvgWrap.id = 'bld-dag-wrap';
   dagPanel.appendChild(dagSvgWrap);
+  var dagAdvice = document.createElement('div');
+  dagAdvice.id = 'bld-dag-advice';
+  dagPanel.appendChild(dagAdvice);
   visuals.appendChild(dagPanel);
 
   var illPanel = document.createElement('div');
@@ -968,10 +995,12 @@ function makeAccordion(id, title, populateFn) {
 }
 
 function updateBuilderOutput(def) {
-  var o = state.builder.vars.outcome.trim() || 'Y';
-  var x = state.builder.vars.exposure.trim() || 'X';
-  var cs = parseVarList(state.builder.vars.confounders).slice(0, 8);
-  var ms = parseVarList(state.builder.vars.effMods).slice(0, 3);
+  var o    = state.builder.vars.outcome.trim()    || 'Y';
+  var x    = state.builder.vars.exposure.trim()   || 'X';
+  var cs   = parseVarList(state.builder.vars.confounders).slice(0, 8);
+  var ms   = parseVarList(state.builder.vars.effMods).slice(0, 3);
+  var meds = parseVarList(state.builder.vars.mediators).slice(0, 3);
+  var cols = parseVarList(state.builder.vars.colliders).slice(0, 3);
 
   /* Formula */
   var formulaEl = document.getElementById('bld-formula-block');
@@ -981,119 +1010,232 @@ function updateBuilderOutput(def) {
   var noteEl = document.getElementById('bld-effect-note');
   if (noteEl) noteEl.textContent = def.effectNote(x, o);
 
-  /* DAG */
+  /* DAG + advice */
   var dagWrap = document.getElementById('bld-dag-wrap');
-  if (dagWrap) dagWrap.innerHTML = buildDAGSvg(x, o, cs, ms);
+  if (dagWrap) dagWrap.innerHTML = buildDAGSvg(x, o, cs, ms, meds, cols);
+  var dagAdviceEl = document.getElementById('bld-dag-advice');
+  if (dagAdviceEl) dagAdviceEl.innerHTML = buildAdjustmentAdvice(x, o, meds, cols);
 
   /* R code */
   var rcodeEl = document.getElementById('bld-rcode-block');
   if (rcodeEl) rcodeEl.textContent = def.rCode(o, x, cs, ms);
 }
 
-function buildDAGSvg(x, o, cs, ms) {
-  var W = 400, H = 210;
-  var expX = 88, expY = 110;
-  var outX = 312, outY = 110;
+function buildDAGSvg(x, o, cs, ms, meds, cols) {
+  meds = meds || [];
+  cols = cols || [];
 
-  /* Limit nodes for readability */
-  var displayCs = cs.slice(0, 5);
-  var displayMs = ms.slice(0, 2);
+  var displayCs   = cs.slice(0, 5);
+  var displayMs   = ms.slice(0, 2);
+  var displayMeds = meds.slice(0, 3);
+  var displayCols = cols.slice(0, 3);
 
-  var hasCs = displayCs.length > 0;
-  var hasMs = displayMs.length > 0;
+  var hasCs   = displayCs.length   > 0;
+  var hasMs   = displayMs.length   > 0;
+  var hasMeds = displayMeds.length > 0;
+  var hasCols = displayCols.length > 0;
+
+  /* Layout constants */
+  var W = 440;
+  var expX = 78, outX = 362;
+  /* Main axis Y — push down when confounders need space above */
+  var mainY = hasCs ? 128 : 110;
+
+  /* Vertical positions for optional zones */
+  var colY = mainY + 92;   /* colliders below */
+  var emY  = hasCols ? colY + 52 : mainY + 92;  /* effect modifiers */
+
+  /* Total height */
+  var H = mainY + 70;
+  if (hasCols) H = Math.max(H, colY + 28);
+  if (hasMs)   H = Math.max(H, emY + 25);
+  H = Math.max(H, mainY + 55);
+
+  var midX = (expX + outX) / 2;
 
   var svg = '<svg role="img" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto">' +
     '<title>Directed acyclic graph</title>' +
-    '<desc>DAG showing relationships between ' + escHtml(x) + ', ' + escHtml(o) +
-    (hasCs ? ', confounders' : '') + (hasMs ? ', and effect modifiers' : '') + '</desc>' +
+    '<desc>DAG: ' + escHtml(x) + ' → ' + escHtml(o) +
+    (hasCs   ? '; confounders'    : '') +
+    (hasMeds ? '; mediators'      : '') +
+    (hasCols ? '; colliders'      : '') +
+    (hasMs   ? '; effect modifier': '') + '</desc>' +
     '<defs>' +
-    '<marker id="dag-a" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
-    '<polygon points="0 0, 7 2.5, 0 5" fill="currentColor" opacity="0.65"/></marker>' +
-    '<marker id="dag-am" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
-    '<polygon points="0 0, 7 2.5, 0 5" fill="var(--svg-period)" opacity="0.8"/></marker>' +
+    '<marker id="daga"  markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
+    '<polygon points="0 0,7 2.5,0 5" fill="currentColor" opacity="0.65"/></marker>' +
+    '<marker id="dagam" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
+    '<polygon points="0 0,7 2.5,0 5" fill="var(--svg-period)" opacity="0.85"/></marker>' +
+    '<marker id="dagac" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">' +
+    '<polygon points="0 0,7 2.5,0 5" fill="var(--svg-event)" opacity="0.75"/></marker>' +
     '</defs>';
 
-  /* Exposure → Outcome main arrow */
-  svg += '<line x1="' + (expX+38) + '" y1="' + expY + '" x2="' + (outX-38) + '" y2="' + outY +
-    '" stroke="currentColor" stroke-width="2" opacity="0.75" marker-end="url(#dag-a)"/>';
-
-  /* Confounders */
+  /* ── CONFOUNDERS (top) ── */
   if (hasCs) {
     var cCount = displayCs.length;
-    var cGap = Math.min(72, (W - 60) / (cCount + 1));
-    var cTotalW = cGap * (cCount - 1);
-    var cLeft = (W - cTotalW) / 2;
+    var cGap   = Math.min(78, (W - 80) / Math.max(cCount, 1));
+    var cLeft  = (W - cGap * (cCount - 1)) / 2;
+    var cy     = 30;
 
     displayCs.forEach(function(c, i) {
-      var cx = cLeft + i * cGap;
-      var cy = 32;
+      var cx   = cLeft + i * cGap;
       var cLbl = c.length > 9 ? c.slice(0, 8) + '…' : c;
-
-      /* C → Exposure */
-      svg += '<line x1="' + cx + '" y1="' + (cy + 14) + '" x2="' + (expX + 12) + '" y2="' + (expY - 14) +
-        '" stroke="currentColor" stroke-width="1.4" opacity="0.5" stroke-dasharray="4,3" marker-end="url(#dag-a)"/>';
-      /* C → Outcome */
-      svg += '<line x1="' + cx + '" y1="' + (cy + 14) + '" x2="' + (outX - 12) + '" y2="' + (outY - 14) +
-        '" stroke="currentColor" stroke-width="1.4" opacity="0.5" stroke-dasharray="4,3" marker-end="url(#dag-a)"/>';
-
-      /* C node */
-      svg += '<rect x="' + (cx - 24) + '" y="' + (cy - 13) + '" width="48" height="24" rx="5"' +
+      svg += '<line x1="' + cx + '" y1="' + (cy+14) + '" x2="' + (expX+14) + '" y2="' + (mainY-16) +
+        '" stroke="currentColor" stroke-width="1.4" opacity="0.45" stroke-dasharray="4,3" marker-end="url(#daga)"/>';
+      svg += '<line x1="' + cx + '" y1="' + (cy+14) + '" x2="' + (outX-14) + '" y2="' + (mainY-16) +
+        '" stroke="currentColor" stroke-width="1.4" opacity="0.45" stroke-dasharray="4,3" marker-end="url(#daga)"/>';
+      svg += '<rect x="' + (cx-25) + '" y="' + (cy-13) + '" width="50" height="24" rx="5"' +
         ' fill="var(--bg)" stroke="currentColor" stroke-width="1.4" opacity="0.8"/>';
-      svg += '<text x="' + cx + '" y="' + (cy + 4) + '" text-anchor="middle" font-size="9"' +
+      svg += '<text x="' + cx + '" y="' + (cy+4) + '" text-anchor="middle" font-size="9"' +
         ' fill="currentColor" font-family="system-ui,sans-serif">' + escHtml(cLbl) + '</text>';
     });
-
-    svg += '<text x="' + W/2 + '" y="11" text-anchor="middle" font-size="8" fill="currentColor"' +
-      ' opacity="0.5" font-family="system-ui,sans-serif">Confounders</text>';
+    svg += '<text x="' + (W/2) + '" y="11" text-anchor="middle" font-size="8" fill="currentColor"' +
+      ' opacity="0.42" font-family="system-ui,sans-serif">Confounders</text>';
   }
 
-  /* Effect modifiers */
+  /* ── MEDIATORS on path (horizontal) ── */
+  if (hasMeds) {
+    var mGapPath = (outX - expX) / (displayMeds.length + 1);
+    var medXs = displayMeds.map(function(_, i) { return expX + mGapPath * (i + 1); });
+
+    /* E → M₁ */
+    svg += '<line x1="' + (expX+40) + '" y1="' + mainY + '" x2="' + (medXs[0]-27) + '" y2="' + mainY +
+      '" stroke="currentColor" stroke-width="1.8" opacity="0.8" marker-end="url(#daga)"/>';
+    /* Mᵢ → Mᵢ₊₁ */
+    for (var k = 0; k < medXs.length - 1; k++) {
+      svg += '<line x1="' + (medXs[k]+27) + '" y1="' + mainY + '" x2="' + (medXs[k+1]-27) + '" y2="' + mainY +
+        '" stroke="currentColor" stroke-width="1.8" opacity="0.8" marker-end="url(#daga)"/>';
+    }
+    /* Last M → O */
+    svg += '<line x1="' + (medXs[medXs.length-1]+27) + '" y1="' + mainY + '" x2="' + (outX-40) + '" y2="' + mainY +
+      '" stroke="currentColor" stroke-width="1.8" opacity="0.8" marker-end="url(#daga)"/>';
+
+    /* Direct-effect arc (dashed, curves below) */
+    var arcPeakY = mainY + 52;
+    svg += '<path d="M ' + (expX+20) + ',' + (mainY+14) + ' Q ' + midX + ',' + arcPeakY + ' ' + (outX-20) + ',' + (mainY+14) + '"' +
+      ' fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="5,3" opacity="0.5" marker-end="url(#daga)"/>';
+    svg += '<text x="' + midX + '" y="' + (arcPeakY+13) + '" text-anchor="middle" font-size="8"' +
+      ' fill="currentColor" opacity="0.38" font-family="system-ui,sans-serif">direct effect</text>';
+    svg += '<text x="' + midX + '" y="' + (mainY-7) + '" text-anchor="middle" font-size="8"' +
+      ' fill="var(--svg-control)" opacity="0.5" font-family="system-ui,sans-serif">indirect pathway</text>';
+
+    /* Mediator nodes */
+    displayMeds.forEach(function(med, i) {
+      var mx   = medXs[i];
+      var mLbl = med.length > 9 ? med.slice(0, 8) + '…' : med;
+      svg += '<rect x="' + (mx-26) + '" y="' + (mainY-14) + '" width="52" height="28" rx="5"' +
+        ' fill="var(--bg)" stroke="var(--svg-control)" stroke-width="1.5"/>';
+      svg += '<text x="' + mx + '" y="' + (mainY+4) + '" text-anchor="middle" font-size="9"' +
+        ' fill="currentColor" font-family="system-ui,sans-serif">' + escHtml(mLbl) + '</text>';
+    });
+    svg += '<text x="' + midX + '" y="' + (mainY-19) + '" text-anchor="middle" font-size="8"' +
+      ' fill="var(--svg-control)" opacity="0.55" font-family="system-ui,sans-serif">Mediator(s)</text>';
+
+  } else {
+    /* No mediators — simple direct arrow */
+    svg += '<line x1="' + (expX+40) + '" y1="' + mainY + '" x2="' + (outX-40) + '" y2="' + mainY +
+      '" stroke="currentColor" stroke-width="2" opacity="0.75" marker-end="url(#daga)"/>';
+  }
+
+  /* ── COLLIDERS (below, arrows FROM E and O pointing IN) ── */
+  if (hasCols) {
+    var ccCount = displayCols.length;
+    var ccGap   = Math.min(88, 200 / Math.max(ccCount, 1));
+    var ccLeft  = midX - ccGap * (ccCount - 1) / 2;
+
+    displayCols.forEach(function(col, i) {
+      var cx   = ccLeft + i * ccGap;
+      var cLbl = col.length > 9 ? col.slice(0, 8) + '…' : col;
+
+      /* E → collider */
+      svg += '<line x1="' + (expX+22) + '" y1="' + (mainY+18) + '" x2="' + (cx-16) + '" y2="' + (colY-14) +
+        '" stroke="var(--svg-event)" stroke-width="1.4" opacity="0.6" marker-end="url(#dagac)"/>';
+      /* O → collider */
+      svg += '<line x1="' + (outX-22) + '" y1="' + (mainY+18) + '" x2="' + (cx+16) + '" y2="' + (colY-14) +
+        '" stroke="var(--svg-event)" stroke-width="1.4" opacity="0.6" marker-end="url(#dagac)"/>';
+
+      svg += '<rect x="' + (cx-26) + '" y="' + (colY-14) + '" width="52" height="26" rx="5"' +
+        ' fill="var(--bg)" stroke="var(--svg-event)" stroke-width="1.5" opacity="0.85"/>';
+      svg += '<text x="' + cx + '" y="' + (colY+4) + '" text-anchor="middle" font-size="9"' +
+        ' fill="var(--svg-event)" font-family="system-ui,sans-serif">' + escHtml(cLbl) + '</text>';
+    });
+    svg += '<text x="' + midX + '" y="' + (colY+21) + '" text-anchor="middle" font-size="8"' +
+      ' fill="var(--svg-event)" opacity="0.55" font-family="system-ui,sans-serif">Collider(s) — do not condition</text>';
+  }
+
+  /* ── EFFECT MODIFIERS (bottom, dashed arrow to E→O midpoint) ── */
   if (hasMs) {
-    var midX = (expX + outX) / 2;
-    var midY = expY;
-    var mCount = displayMs.length;
-    var mGap = 80;
-    var mLeft = midX - mGap * (mCount - 1) / 2;
+    var emCount = displayMs.length;
+    var emGap   = 84;
+    var emLeft  = midX - emGap * (emCount - 1) / 2;
 
     displayMs.forEach(function(m, i) {
-      var mx = mLeft + i * mGap;
-      var my = 185;
+      var mx   = emLeft + i * emGap;
       var mLbl = m.length > 9 ? m.slice(0, 8) + '…' : m;
-
-      /* M → midpoint of E→O arrow */
-      svg += '<line x1="' + mx + '" y1="' + (my - 14) + '" x2="' + midX + '" y2="' + (midY + 10) +
-        '" stroke="var(--svg-period)" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#dag-am)"/>';
-
-      svg += '<rect x="' + (mx - 24) + '" y="' + (my - 13) + '" width="48" height="24" rx="5"' +
-        ' fill="var(--bg)" stroke="var(--svg-period)" stroke-width="1.4"/>';
-      svg += '<text x="' + mx + '" y="' + (my + 4) + '" text-anchor="middle" font-size="9"' +
+      svg += '<line x1="' + mx + '" y1="' + (emY-14) + '" x2="' + midX + '" y2="' + (mainY+14) +
+        '" stroke="var(--svg-period)" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.85" marker-end="url(#dagam)"/>';
+      svg += '<rect x="' + (mx-25) + '" y="' + (emY-14) + '" width="50" height="26" rx="5"' +
+        ' fill="var(--bg)" stroke="var(--svg-period)" stroke-width="1.5"/>';
+      svg += '<text x="' + mx + '" y="' + (emY+4) + '" text-anchor="middle" font-size="9"' +
         ' fill="var(--svg-period)" font-family="system-ui,sans-serif">' + escHtml(mLbl) + '</text>';
     });
-
-    svg += '<text x="' + W/2 + '" y="' + (H - 2) + '" text-anchor="middle" font-size="8"' +
-      ' fill="var(--svg-period)" opacity="0.7" font-family="system-ui,sans-serif">Effect modifier(s) → interaction</text>';
+    svg += '<text x="' + midX + '" y="' + (emY+21) + '" text-anchor="middle" font-size="8"' +
+      ' fill="var(--svg-period)" opacity="0.6" font-family="system-ui,sans-serif">Effect modifier(s) → interaction</text>';
   }
 
-  /* Exposure node */
+  /* ── EXPOSURE node ── */
   var xLbl = x.length > 11 ? x.slice(0, 10) + '…' : x;
-  svg += '<rect x="' + (expX - 38) + '" y="' + (expY - 17) + '" width="76" height="34" rx="7"' +
-    ' fill="var(--svg-exposed)" opacity="0.15" stroke="var(--svg-exposed)" stroke-width="2"/>';
-  svg += '<text x="' + expX + '" y="' + (expY + 5) + '" text-anchor="middle" font-size="10"' +
+  svg += '<rect x="' + (expX-40) + '" y="' + (mainY-18) + '" width="80" height="36" rx="7"' +
+    ' fill="var(--svg-exposed)" opacity="0.14" stroke="var(--svg-exposed)" stroke-width="2"/>';
+  svg += '<text x="' + expX + '" y="' + (mainY+5) + '" text-anchor="middle" font-size="10"' +
     ' fill="var(--svg-exposed)" font-weight="600" font-family="system-ui,sans-serif">' + escHtml(xLbl) + '</text>';
-  svg += '<text x="' + expX + '" y="' + (expY + 24) + '" text-anchor="middle" font-size="8"' +
-    ' fill="var(--svg-exposed)" opacity="0.7" font-family="system-ui,sans-serif">Exposure</text>';
+  svg += '<text x="' + expX + '" y="' + (mainY+26) + '" text-anchor="middle" font-size="8"' +
+    ' fill="var(--svg-exposed)" opacity="0.65" font-family="system-ui,sans-serif">Exposure</text>';
 
-  /* Outcome node */
+  /* ── OUTCOME node ── */
   var oLbl = o.length > 11 ? o.slice(0, 10) + '…' : o;
-  svg += '<rect x="' + (outX - 38) + '" y="' + (outY - 17) + '" width="76" height="34" rx="7"' +
-    ' fill="var(--svg-event)" opacity="0.15" stroke="var(--svg-event)" stroke-width="2"/>';
-  svg += '<text x="' + outX + '" y="' + (outY + 5) + '" text-anchor="middle" font-size="10"' +
+  svg += '<rect x="' + (outX-40) + '" y="' + (mainY-18) + '" width="80" height="36" rx="7"' +
+    ' fill="var(--svg-event)" opacity="0.14" stroke="var(--svg-event)" stroke-width="2"/>';
+  svg += '<text x="' + outX + '" y="' + (mainY+5) + '" text-anchor="middle" font-size="10"' +
     ' fill="var(--svg-event)" font-weight="600" font-family="system-ui,sans-serif">' + escHtml(oLbl) + '</text>';
-  svg += '<text x="' + outX + '" y="' + (outY + 24) + '" text-anchor="middle" font-size="8"' +
-    ' fill="var(--svg-event)" opacity="0.7" font-family="system-ui,sans-serif">Outcome</text>';
+  svg += '<text x="' + outX + '" y="' + (mainY+26) + '" text-anchor="middle" font-size="8"' +
+    ' fill="var(--svg-event)" opacity="0.65" font-family="system-ui,sans-serif">Outcome</text>';
 
   svg += '</svg>';
   return svg;
+}
+
+function buildAdjustmentAdvice(x, o, meds, cols) {
+  if (!meds.length && !cols.length) return '';
+  var html = '<div class="dag-advice">';
+
+  if (meds.length) {
+    var medList = meds.map(function(m) {
+      return '<code class="dag-code">' + escHtml(m) + '</code>';
+    }).join(', ');
+    html += '<div class="dag-advice-item dag-advice-med">' +
+      '<span class="dag-advice-icon" aria-hidden="true">⚠</span>' +
+      '<div><strong>Do not adjust for mediator(s): ' + medList + '</strong> — ' +
+      'Including a mediator blocks the indirect pathway (E→M→O) and produces a controlled direct effect estimate, not the total effect. ' +
+      'To decompose total into direct + indirect effects, use mediation analysis ' +
+      '(e.g., R <code class="dag-code">mediation</code> package or the counterfactual g-computation approach).' +
+      '</div></div>';
+  }
+
+  if (cols.length) {
+    var colList = cols.map(function(c) {
+      return '<code class="dag-code">' + escHtml(c) + '</code>';
+    }).join(', ');
+    html += '<div class="dag-advice-item dag-advice-col">' +
+      '<span class="dag-advice-icon" aria-hidden="true">⛔</span>' +
+      '<div><strong>Do not condition on collider(s): ' + colList + '</strong> — ' +
+      'Conditioning on a collider (variable caused by both ' + escHtml(x) + ' and ' + escHtml(o) +
+      ') opens a non-causal path and induces collider stratification bias. ' +
+      'Colliders must not appear in the adjustment set, in selection criteria, or as stratification variables.' +
+      '</div></div>';
+  }
+
+  html += '</div>';
+  return html;
 }
 
 /* =========================================================
