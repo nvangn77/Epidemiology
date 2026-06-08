@@ -94,44 +94,89 @@ var DESIGNS = [
     temporalDirection: 'Prospective',
     primaryMeasure: 'Risk Ratio, Risk Difference, Hazard Ratio',
     svg: SVG.wrap(
-      /* Title/desc */
-      '<title>RCT schematic</title>' +
-      '<desc>Timeline showing a population randomised into treatment and control arms, each followed to outcome assessment.</desc>' +
+      '<title>RCT swimmer plot</title>' +
+      '<desc>Swimmer plot with randomisation diamond, treatment and control arms each showing 5 participant timelines with events and censoring.</desc>' +
 
-      /* Time axis label */
-      SVG.txt(200, 168, 'Time →', {size:9, fill:'currentColor'}) +
+      /* Title */
+      SVG.txt(200, 11, 'RCT — Participant timelines by arm', {size:9, weight:'500'}) +
 
-      /* Population box */
-      SVG.box(10, 70, 80, 36, 'Population', 'currentColor') +
+      /* Population → randomisation */
+      SVG.box(8, 72, 52, 34, 'Population', 'currentColor') +
+      SVG.arrow(60, 89, 80, 89) +
+      /* Randomisation diamond */
+      '<polygon points="96,78 116,89 96,100 76,89" fill="var(--svg-period)" opacity="0.18" stroke="var(--svg-period)" stroke-width="1.5"/>' +
+      SVG.txt(96, 89, 'R', {size:9, fill:'var(--svg-period)', weight:'700'}) +
 
-      /* Arrow to randomisation */
-      SVG.arrow(91, 88, 145, 88) +
+      /* Branch lines */
+      '<line x1="116" y1="89" x2="130" y2="55" stroke="currentColor" stroke-width="1.2" opacity="0.7"/>' +
+      '<line x1="116" y1="89" x2="130" y2="123" stroke="currentColor" stroke-width="1.2" opacity="0.7"/>' +
 
-      /* Randomisation box */
-      SVG.box(146, 70, 76, 36, 'Randomisation', 'currentColor') +
+      /* ---- Treatment arm label ---- */
+      SVG.txt(133, 24, 'Treatment arm', {size:8, fill:'var(--svg-exposed)', anchor:'start', weight:'500'}) +
 
-      /* Branch lines from randomisation */
-      '<line x1="222" y1="88" x2="252" y2="55" stroke="currentColor" stroke-width="1.5"/>' +
-      '<line x1="222" y1="88" x2="252" y2="121" stroke="currentColor" stroke-width="1.5"/>' +
+      /* Treatment swimmers y=30,39,48,57,66 — 5 people, 1 event */
+      /* P1: bar 133→290 (2.6y), censored */
+      '<rect x="133" y="27" width="157" height="7" rx="2" fill="var(--svg-exposed)" opacity="0.35" stroke="var(--svg-exposed)" stroke-width="0.8"/>' +
+      '<line x1="290" y1="24" x2="290" y2="37" stroke="currentColor" stroke-width="1.5"/><line x1="287" y1="24" x2="293" y2="24" stroke="currentColor" stroke-width="1.5"/>' +
+      /* P2: bar 133→340 (3.5y), censored */
+      '<rect x="133" y="36" width="207" height="7" rx="2" fill="var(--svg-exposed)" opacity="0.35" stroke="var(--svg-exposed)" stroke-width="0.8"/>' +
+      '<line x1="340" y1="33" x2="340" y2="46" stroke="currentColor" stroke-width="1.5"/><line x1="337" y1="33" x2="343" y2="33" stroke="currentColor" stroke-width="1.5"/>' +
+      /* P3: bar 133→220 (1.5y), EVENT */
+      '<rect x="133" y="45" width="87" height="7" rx="2" fill="var(--svg-exposed)" opacity="0.35" stroke="var(--svg-exposed)" stroke-width="0.8"/>' +
+      '<circle cx="220" cy="49" r="4" fill="var(--svg-event)" opacity="0.9"/>' +
+      /* P4: bar 133→370 (4.0y), censored */
+      '<rect x="133" y="54" width="237" height="7" rx="2" fill="var(--svg-exposed)" opacity="0.35" stroke="var(--svg-exposed)" stroke-width="0.8"/>' +
+      '<line x1="370" y1="51" x2="370" y2="64" stroke="currentColor" stroke-width="1.5"/><line x1="367" y1="51" x2="373" y2="51" stroke="currentColor" stroke-width="1.5"/>' +
+      /* P5: bar 133→310 (3.0y), censored */
+      '<rect x="133" y="63" width="177" height="7" rx="2" fill="var(--svg-exposed)" opacity="0.35" stroke="var(--svg-exposed)" stroke-width="0.8"/>' +
+      '<line x1="310" y1="60" x2="310" y2="73" stroke="currentColor" stroke-width="1.5"/><line x1="307" y1="60" x2="313" y2="60" stroke="currentColor" stroke-width="1.5"/>' +
 
-      /* Treatment arm */
-      SVG.box(252, 36, 76, 36, 'Treatment', 'var(--svg-exposed)') +
-      SVG.arrow(328, 54, 352, 54, 'var(--svg-exposed)', 'url(#arr-exp)') +
-      SVG.box(352, 36, 40, 36, 'Outcome', 'var(--svg-event)') +
+      /* ---- Control arm label ---- */
+      SVG.txt(133, 96, 'Control arm', {size:8, fill:'var(--svg-control)', anchor:'start', weight:'500'}) +
 
-      /* Control arm */
-      SVG.box(252, 103, 76, 36, 'Control', 'var(--svg-control)') +
-      SVG.arrow(328, 121, 352, 121, 'var(--svg-control)', 'url(#arr-ctrl)') +
-      SVG.box(352, 103, 40, 36, 'Outcome', 'var(--svg-event)') +
+      /* Control swimmers — 3 events out of 5 */
+      /* C1: bar 133→175 (0.7y), EVENT */
+      '<rect x="133" y="99" width="42" height="7" rx="2" fill="var(--svg-control)" opacity="0.35" stroke="var(--svg-control)" stroke-width="0.8"/>' +
+      '<circle cx="175" cy="103" r="4" fill="var(--svg-event)" opacity="0.9"/>' +
+      /* C2: bar 133→280 (2.5y), EVENT */
+      '<rect x="133" y="108" width="147" height="7" rx="2" fill="var(--svg-control)" opacity="0.35" stroke="var(--svg-control)" stroke-width="0.8"/>' +
+      '<circle cx="280" cy="112" r="4" fill="var(--svg-event)" opacity="0.9"/>' +
+      /* C3: bar 133→360 (3.8y), censored */
+      '<rect x="133" y="117" width="227" height="7" rx="2" fill="var(--svg-control)" opacity="0.35" stroke="var(--svg-control)" stroke-width="0.8"/>' +
+      '<line x1="360" y1="114" x2="360" y2="127" stroke="currentColor" stroke-width="1.5"/><line x1="357" y1="114" x2="363" y2="114" stroke="currentColor" stroke-width="1.5"/>' +
+      /* C4: bar 133→240 (1.8y), EVENT */
+      '<rect x="133" y="126" width="107" height="7" rx="2" fill="var(--svg-control)" opacity="0.35" stroke="var(--svg-control)" stroke-width="0.8"/>' +
+      '<circle cx="240" cy="130" r="4" fill="var(--svg-event)" opacity="0.9"/>' +
+      /* C5: bar 133→320 (3.1y), censored */
+      '<rect x="133" y="135" width="187" height="7" rx="2" fill="var(--svg-control)" opacity="0.35" stroke="var(--svg-control)" stroke-width="0.8"/>' +
+      '<line x1="320" y1="132" x2="320" y2="145" stroke="currentColor" stroke-width="1.5"/><line x1="317" y1="132" x2="323" y2="132" stroke="currentColor" stroke-width="1.5"/>' +
+
+      /* Randomisation dashed line */
+      '<line x1="133" y1="16" x2="133" y2="148" stroke="currentColor" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>' +
+      SVG.txt(133, 14, 'Randomisation', {size:7, anchor:'middle'}) +
+
+      /* Time axis */
+      SVG.timeAxis(133, 385, 150) +
+      SVG.txt(133, 160, '0', {size:7}) +
+      SVG.txt(193, 160, '1y', {size:7}) +
+      SVG.txt(253, 160, '2y', {size:7}) +
+      SVG.txt(313, 160, '3y', {size:7}) +
+      SVG.txt(373, 160, '4y', {size:7}) +
+
+      /* Outcome summary labels */
+      SVG.txt(252, 79, '1/5 events', {size:8, fill:'var(--svg-exposed)', anchor:'middle'}) +
+      SVG.txt(252, 150, '3/5 events', {size:8, fill:'var(--svg-control)', anchor:'middle'}) +
 
       /* Legend */
-      '<rect x="10" y="140" width="12" height="8" rx="2" fill="var(--svg-exposed)" opacity="0.5"/>' +
-      SVG.txt(26, 148, 'Treatment', {size:9, anchor:'start'}) +
-      '<rect x="80" y="140" width="12" height="8" rx="2" fill="var(--svg-control)" opacity="0.5"/>' +
-      SVG.txt(96, 148, 'Control', {size:9, anchor:'start'}) +
-      '<rect x="140" y="140" width="12" height="8" rx="2" fill="var(--svg-event)" opacity="0.5"/>' +
-      SVG.txt(156, 148, 'Outcome', {size:9, anchor:'start'}),
-      175
+      '<rect x="8" y="170" width="10" height="5" rx="1" fill="var(--svg-exposed)" opacity="0.5"/>' +
+      SVG.txt(21, 175, 'Treatment', {size:8, anchor:'start'}) +
+      '<rect x="80" y="170" width="10" height="5" rx="1" fill="var(--svg-control)" opacity="0.5"/>' +
+      SVG.txt(93, 175, 'Control', {size:8, anchor:'start'}) +
+      '<circle cx="146" cy="172" r="4" fill="var(--svg-event)" opacity="0.9"/>' +
+      SVG.txt(153, 175, 'Event', {size:8, anchor:'start'}) +
+      '<line x1="200" y1="168" x2="200" y2="178" stroke="currentColor" stroke-width="1.5"/><line x1="197" y1="168" x2="203" y2="168" stroke="currentColor" stroke-width="1.5"/>' +
+      SVG.txt(208, 175, 'Censored', {size:8, anchor:'start'}),
+      185
     ),
     strengths: [
       'Randomisation eliminates measured and unmeasured confounding in expectation.',
@@ -159,42 +204,63 @@ var DESIGNS = [
     temporalDirection: 'Prospective or retrospective',
     primaryMeasure: 'Relative Risk, Hazard Ratio, Incidence Rate Ratio',
     svg: SVG.wrap(
-      '<title>Cohort study schematic</title>' +
-      '<desc>Two groups — exposed and unexposed — followed forward in time from a common entry point to outcome assessment.</desc>' +
+      '<title>Cohort study swimmer plot</title>' +
+      '<desc>Swimmer plot showing 3 exposed and 3 unexposed participants followed from cohort entry, with events and censoring on a time axis.</desc>' +
 
-      /* Time axis */
-      SVG.arrow(30, 165, 390, 165) +
-      SVG.txt(210, 178, 'Time →', {size:9}) +
+      SVG.txt(200, 10, 'Cohort study — individual follow-up timelines', {size:9, weight:'500'}) +
 
-      /* Cohort entry marker */
-      '<line x1="60" y1="30" x2="60" y2="160" stroke="currentColor" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>' +
-      SVG.txt(60, 22, 'Cohort entry', {size:9}) +
+      /* Group labels */
+      SVG.txt(60, 30, 'Exposed', {size:9, fill:'var(--svg-exposed)', anchor:'end', weight:'500'}) +
+      SVG.txt(60, 112, 'Unexposed', {size:9, fill:'var(--svg-control)', anchor:'end', weight:'500'}) +
 
-      /* Exposed arm */
-      SVG.txt(30, 68, 'Exposed', {size:10, fill:'var(--svg-exposed)', anchor:'start', weight:'500'}) +
-      '<rect x="60" y="58" width="200" height="20" rx="4" fill="var(--svg-exposed)" opacity="0.18" stroke="var(--svg-exposed)" stroke-width="1"/>' +
-      SVG.arrow(260, 68, 330, 68, 'var(--svg-exposed)', 'url(#arr-exp)') +
-      SVG.box(330, 50, 55, 36, 'Outcome', 'var(--svg-event)') +
+      /* Cohort entry dashed line */
+      '<line x1="65" y1="15" x2="65" y2="148" stroke="currentColor" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>' +
+      SVG.txt(65, 12, 'Entry', {size:7}) +
 
-      /* Unexposed arm */
-      SVG.txt(30, 118, 'Unexposed', {size:10, fill:'var(--svg-control)', anchor:'start', weight:'500'}) +
-      '<rect x="60" y="108" width="200" height="20" rx="4" fill="var(--svg-control)" opacity="0.18" stroke="var(--svg-control)" stroke-width="1"/>' +
-      SVG.arrow(260, 118, 330, 118, 'var(--svg-control)', 'url(#arr-ctrl)') +
-      SVG.box(330, 100, 55, 36, 'Outcome', 'var(--svg-event)') +
+      /* ---- Exposed participants ---- */
+      /* E1: y=38, bar 65→305 (4.0y), event */
+      '<rect x="65" y="34" width="240" height="8" rx="2" fill="var(--svg-exposed)" opacity="0.4" stroke="var(--svg-exposed)" stroke-width="0.8"/>' +
+      '<circle cx="305" cy="38" r="4.5" fill="var(--svg-event)" opacity="0.9"/>' +
+      /* E2: y=56, bar 65→215 (2.5y), censored */
+      '<rect x="65" y="52" width="150" height="8" rx="2" fill="var(--svg-exposed)" opacity="0.4" stroke="var(--svg-exposed)" stroke-width="0.8"/>' +
+      '<line x1="215" y1="49" x2="215" y2="63" stroke="currentColor" stroke-width="1.8"/><line x1="211" y1="49" x2="219" y2="49" stroke="currentColor" stroke-width="1.8"/>' +
+      /* E3: y=74, bar 65→353 (4.8y), event */
+      '<rect x="65" y="70" width="288" height="8" rx="2" fill="var(--svg-exposed)" opacity="0.4" stroke="var(--svg-exposed)" stroke-width="0.8"/>' +
+      '<circle cx="353" cy="74" r="4.5" fill="var(--svg-event)" opacity="0.9"/>' +
 
-      /* Outcome assessment marker */
-      '<line x1="330" y1="30" x2="330" y2="160" stroke="currentColor" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>' +
-      SVG.txt(355, 22, 'Follow-up end', {size:9}) +
+      /* Separator line */
+      '<line x1="55" y1="90" x2="390" y2="90" stroke="currentColor" stroke-width="0.5" stroke-dasharray="4,4" opacity="0.4"/>' +
 
-      /* Note for retrospective */
-      SVG.txt(200, 148, '(Retrospective: data collected after outcomes occurred)', {size:8, fill:'currentColor'}) +
+      /* ---- Unexposed participants ---- */
+      /* U1: y=100, bar 65→365 (5.0y), censored */
+      '<rect x="65" y="96" width="300" height="8" rx="2" fill="var(--svg-control)" opacity="0.4" stroke="var(--svg-control)" stroke-width="0.8"/>' +
+      '<line x1="365" y1="93" x2="365" y2="107" stroke="currentColor" stroke-width="1.8"/><line x1="361" y1="93" x2="369" y2="93" stroke="currentColor" stroke-width="1.8"/>' +
+      /* U2: y=118, bar 65→173 (1.8y), censored */
+      '<rect x="65" y="114" width="108" height="8" rx="2" fill="var(--svg-control)" opacity="0.4" stroke="var(--svg-control)" stroke-width="0.8"/>' +
+      '<line x1="173" y1="111" x2="173" y2="125" stroke="currentColor" stroke-width="1.8"/><line x1="169" y1="111" x2="177" y2="111" stroke="currentColor" stroke-width="1.8"/>' +
+      /* U3: y=136, bar 65→323 (4.3y), event */
+      '<rect x="65" y="132" width="258" height="8" rx="2" fill="var(--svg-control)" opacity="0.4" stroke="var(--svg-control)" stroke-width="0.8"/>' +
+      '<circle cx="323" cy="136" r="4.5" fill="var(--svg-event)" opacity="0.9"/>' +
+
+      /* Time axis at y=153 */
+      SVG.timeAxis(65, 390, 153) +
+      SVG.txt(65, 163, '0', {size:8}) +
+      SVG.txt(125, 163, '1y', {size:8}) +
+      SVG.txt(185, 163, '2y', {size:8}) +
+      SVG.txt(245, 163, '3y', {size:8}) +
+      SVG.txt(305, 163, '4y', {size:8}) +
+      SVG.txt(365, 163, '5y', {size:8}) +
 
       /* Legend */
-      '<rect x="60" y="30" width="12" height="8" rx="2" fill="var(--svg-exposed)" opacity="0.5"/>' +
-      SVG.txt(76, 38, 'Exposed', {size:9, anchor:'start'}) +
-      '<rect x="130" y="30" width="12" height="8" rx="2" fill="var(--svg-control)" opacity="0.5"/>' +
-      SVG.txt(146, 38, 'Unexposed', {size:9, anchor:'start'}),
-      185
+      '<circle cx="10" cy="173" r="4" fill="var(--svg-event)" opacity="0.9"/>' +
+      SVG.txt(17, 176, 'Event', {size:8, anchor:'start'}) +
+      '<line x1="60" y1="170" x2="60" y2="178" stroke="currentColor" stroke-width="1.5"/><line x1="57" y1="170" x2="63" y2="170" stroke="currentColor" stroke-width="1.5"/>' +
+      SVG.txt(66, 176, 'Censored', {size:8, anchor:'start'}) +
+      '<rect x="120" y="170" width="14" height="6" rx="1" fill="var(--svg-exposed)" opacity="0.5"/>' +
+      SVG.txt(137, 176, 'Exposed', {size:8, anchor:'start'}) +
+      '<rect x="185" y="170" width="14" height="6" rx="1" fill="var(--svg-control)" opacity="0.5"/>' +
+      SVG.txt(202, 176, 'Unexposed', {size:8, anchor:'start'}),
+      180
     ),
     strengths: [
       'Can study multiple outcomes from a single exposure assessment.',
