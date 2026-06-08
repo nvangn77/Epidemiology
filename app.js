@@ -540,12 +540,14 @@ function updateResult(def) {
 function buildDesignDropdown() {
   var sel = document.getElementById('design-select');
   var categories = {};
-  var categoryOrder = ['experimental', 'observational', 'self-controlled', 'quasi-experimental'];
+  var categoryOrder = ['experimental', 'observational', 'self-controlled', 'quasi-experimental', 'pharmacovigilance', 'evidence-synthesis'];
   var categoryLabels = {
-    experimental:     'Experimental',
-    observational:    'Observational',
-    'self-controlled':'Self-controlled',
-    'quasi-experimental': 'Quasi-experimental'
+    experimental:         'Experimental',
+    observational:        'Observational',
+    'self-controlled':    'Self-controlled',
+    'quasi-experimental': 'Quasi-experimental',
+    pharmacovigilance:    'Pharmacovigilance / Signal Detection',
+    'evidence-synthesis': 'Evidence Synthesis'
   };
 
   DESIGNS.forEach(function(d) {
