@@ -17,8 +17,9 @@ var state = {
     openPills: {},
     dynamicRows: []
   },
-  design: { selectedId: null },
-  bias:   { selectedId: null },
+  design:    { selectedId: null },
+  bias:      { selectedId: null },
+  registry:  { selectedId: null },
   builder: {
     modelId: null,
     vars: {
@@ -1424,6 +1425,274 @@ function buildAdjustmentAdvice(x, o, meds, cols) {
 }
 
 /* =========================================================
+   REGISTRY MODULE
+   ========================================================= */
+function buildRegistryDropdown() {
+  var sel = document.getElementById('registry-select');
+  if (!sel || typeof REGISTRIES === 'undefined') return;
+  var categoryOrder = ['linkage', 'exposure', 'outcome', 'confounder'];
+  var categoryLabels = {
+    linkage:    'Linkage / Backbone',
+    exposure:   'Exposure',
+    outcome:    'Outcome',
+    confounder: 'Confounder / Covariate'
+  };
+  var groups = {};
+  categoryOrder.forEach(function(c) { groups[c] = []; });
+  REGISTRIES.forEach(function(r) {
+    if (groups[r.category]) groups[r.category].push(r);
+    else { groups[r.category] = [r]; }
+  });
+  var html = '';
+  categoryOrder.forEach(function(c) {
+    if (!groups[c] || !groups[c].length) return;
+    html += '<optgroup label="' + escHtml(categoryLabels[c] || c) + '">';
+    groups[c].forEach(function(r) {
+      html += '<option value="' + escHtml(r.id) + '">' + escHtml(r.label) + '</option>';
+    });
+    html += '</optgroup>';
+  });
+  sel.innerHTML = html;
+  sel.addEventListener('change', function() {
+    selectRegistry(sel.value);
+  });
+  selectRegistry(sel.value);
+}
+
+function selectRegistry(id) {
+  state.registry.selectedId = id;
+  var reg = (typeof REGISTRIES !== 'undefined') ? REGISTRIES.find(function(r) { return r.id === id; }) : null;
+  renderRegistryCard(reg);
+  renderFeasibilityChecker();
+}
+
+function renderRegistryCard(reg) {
+  var el = document.getElementById('registry-card');
+  if (!el) return;
+  if (!reg) { el.innerHTML = ''; return; }
+
+  var catColors = { linkage: 'reg-cat-linkage', exposure: 'reg-cat-exposure', outcome: 'reg-cat-outcome', confounder: 'reg-cat-confounder' };
+  var catClass = catColors[reg.category] || '';
+
+  var html = '<div class="reg-card">';
+
+  /* Header */
+  html += '<div class="reg-header">';
+  html += '<div class="reg-title-block">';
+  html += '<span class="reg-abbr-badge">' + escHtml(reg.abbreviation) + '</span>';
+  html += '<div><div class="reg-name">' + escHtml(reg.label) + '</div>';
+  html += '<div class="reg-danish-name">' + escHtml(reg.danishName) + '</div></div>';
+  html += '</div>';
+  html += '<span class="reg-cat-badge ' + catClass + '">' + escHtml(reg.category) + '</span>';
+  html += '</div>';
+
+  /* LPR structural break */
+  if (reg.structuralBreak) {
+    var br = reg.structuralBreak;
+    html += '<div class="reg-break-warning">';
+    html += '<div class="reg-break-title">&#9888; Structural break: LPR2 &#8594; LPR3 (February 2019)</div>';
+    html += '<p class="reg-break-desc">' + escHtml(br.description) + '</p>';
+    html += '<div class="reg-break-grid">';
+    [br.lpr2, br.lpr3].forEach(function(v) {
+      html += '<div class="reg-break-col">';
+      html += '<div class="reg-break-label">' + escHtml(v.label) + '</div>';
+      html += '<ul class="reg-break-list">';
+      html += '<li><strong>Unit:</strong> ' + escHtml(v.unit) + '</li>';
+      html += '<li><strong>Diagnoses:</strong> ' + escHtml(v.diagnosisField) + '</li>';
+      html += '<li><strong>Procedures:</strong> ' + escHtml(v.procedureField) + '</li>';
+      html += '<li><strong>Key tables:</strong> ' + v.keyTables.map(function(t) { return '<code>' + escHtml(t) + '</code>'; }).join(', ') + '</li>';
+      if (v.notes) html += '<li><em>' + escHtml(v.notes) + '</em></li>';
+      html += '</ul></div>';
+    });
+    html += '</div></div>';
+  }
+
+  html += '<div class="reg-body">';
+
+  /* Meta grid */
+  html += '<div class="reg-meta-grid">';
+  var meta = [
+    ['Data holder',  reg.dataHolder],
+    ['Access route', reg.accessRoute],
+    ['Coverage',     (reg.coverageStart || '?') + ' – ' + (reg.coverageEnd ? reg.coverageEnd : 'present')],
+    ['Geography',    reg.geoCoverage],
+    ['Population',   reg.population]
+  ];
+  meta.forEach(function(row) {
+    html += '<div class="reg-meta-item"><span class="reg-meta-key">' + escHtml(row[0]) + '</span><span class="reg-meta-val">' + escHtml(row[1]) + '</span></div>';
+  });
+  html += '</div>';
+
+  /* Key variables */
+  if (reg.keyVariables && reg.keyVariables.length) {
+    html += '<div class="reg-section"><div class="reg-section-title">Key variables</div>';
+    html += '<table class="reg-vars-table"><thead><tr><th>Variable</th><th>Type</th><th>Description</th></tr></thead><tbody>';
+    reg.keyVariables.forEach(function(v) {
+      html += '<tr><td class="reg-var-name">' + escHtml(v.name) + '</td>';
+      html += '<td><span class="var-type-badge vt-' + escHtml(v.type) + '">' + escHtml(v.type) + '</span></td>';
+      html += '<td>' + escHtml(v.description) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  /* Strengths & Limitations */
+  html += '<div class="reg-sl-grid">';
+  html += '<div class="reg-strengths"><div class="reg-s-title">Strengths</div><ul>';
+  (reg.strengths || []).forEach(function(s) { html += '<li>' + escHtml(s) + '</li>'; });
+  html += '</ul></div>';
+  html += '<div class="reg-limitations"><div class="reg-l-title">Limitations</div><ul>';
+  (reg.limitations || []).forEach(function(s) { html += '<li>' + escHtml(s) + '</li>'; });
+  html += '</ul></div>';
+  html += '</div>';
+
+  /* PPVs */
+  if (reg.knownPPVs && reg.knownPPVs.length) {
+    html += '<div class="reg-section"><div class="reg-section-title">Validation studies (PPV / sensitivity)</div>';
+    html += '<table class="reg-ppv-table"><thead><tr><th>Phenotype</th><th>Estimate</th><th>Source</th></tr></thead><tbody>';
+    reg.knownPPVs.forEach(function(p) {
+      html += '<tr><td>' + escHtml(p.phenotype) + '</td>';
+      html += '<td><span class="ppv-badge">' + escHtml(p.ppv) + '</span></td>';
+      html += '<td class="ppv-source">' + escHtml(p.source) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  /* Nordic comparisons */
+  if (reg.nordics) {
+    var countries = [['sweden','Sweden'],['norway','Norway'],['finland','Finland']];
+    var hasNordic = countries.some(function(c) { return reg.nordics[c[0]]; });
+    if (hasNordic) {
+      html += '<div class="reg-section">';
+      html += '<details class="reg-nordic-details"><summary class="reg-nordic-summary">Nordic analogues</summary>';
+      html += '<div class="reg-nordic-body">';
+      html += '<table class="reg-nordic-table"><thead><tr><th>Country</th><th>Register</th><th>Coverage</th><th>Notes</th></tr></thead><tbody>';
+      countries.forEach(function(pair) {
+        var n = reg.nordics[pair[0]];
+        if (!n) return;
+        html += '<tr><td>' + escHtml(pair[1]) + '</td>';
+        html += '<td><strong>' + escHtml(n.name) + '</strong></td>';
+        html += '<td>' + escHtml(n.coverage) + '</td>';
+        html += '<td class="reg-nordic-note">' + escHtml(n.notes) + '</td></tr>';
+      });
+      html += '</tbody></table></div></details></div>';
+    }
+  }
+
+  html += '</div></div>'; /* close reg-body + reg-card */
+  el.innerHTML = html;
+}
+
+function renderFeasibilityChecker() {
+  var el = document.getElementById('registry-feasibility');
+  if (!el || typeof REGISTRY_NEEDS === 'undefined') return;
+
+  var groups = {};
+  var groupOrder = [];
+  REGISTRY_NEEDS.forEach(function(need) {
+    if (!groups[need.group]) { groups[need.group] = []; groupOrder.push(need.group); }
+    groups[need.group].push(need);
+  });
+
+  var html = '<div class="reg-feasibility-card">';
+  html += '<div class="reg-feasibility-header">';
+  html += '<div class="reg-feasibility-title">Study feasibility checker</div>';
+  html += '<div class="reg-feasibility-sub">Select what your study needs — matching registers appear below</div>';
+  html += '</div>';
+  html += '<div class="reg-feasibility-body">';
+  html += '<div class="feasibility-needs">';
+
+  groupOrder.forEach(function(gLabel) {
+    html += '<div class="feasibility-group">';
+    html += '<div class="feasibility-group-label">' + escHtml(gLabel) + '</div>';
+    groups[gLabel].forEach(function(need) {
+      html += '<label class="feasibility-need-item">';
+      html += '<input type="checkbox" class="feasibility-cb" data-need="' + escHtml(need.id) + '" /> ';
+      html += '<span class="feasibility-need-text"><span class="feasibility-need-label">' + escHtml(need.label) + '</span>';
+      if (need.description) html += '<span class="feasibility-need-desc">' + escHtml(need.description) + '</span>';
+      html += '</span></label>';
+    });
+    html += '</div>';
+  });
+
+  html += '</div>'; /* feasibility-needs */
+  html += '<div class="feasibility-result" id="feasibility-result"><div class="feasibility-result-empty">Select study needs above to see recommended registers.</div></div>';
+  html += '</div></div>'; /* reg-feasibility-body + reg-feasibility-card */
+
+  el.innerHTML = html;
+
+  /* Wire checkboxes */
+  el.querySelectorAll('.feasibility-cb').forEach(function(cb) {
+    cb.addEventListener('change', updateFeasibilityResult);
+  });
+}
+
+function updateFeasibilityResult() {
+  var el = document.getElementById('feasibility-result');
+  if (!el || typeof REGISTRY_NEEDS === 'undefined' || typeof REGISTRIES === 'undefined') return;
+
+  var checked = [];
+  document.querySelectorAll('.feasibility-cb:checked').forEach(function(cb) {
+    checked.push(cb.getAttribute('data-need'));
+  });
+
+  if (!checked.length) {
+    el.innerHTML = '<div class="feasibility-result-empty">Select study needs above to see recommended registers.</div>';
+    return;
+  }
+
+  /* Collect matching needs + their register IDs */
+  var regIdSet = {};
+  var tips = [];
+  var nordicNeeded = false;
+
+  checked.forEach(function(needId) {
+    var need = REGISTRY_NEEDS.find(function(n) { return n.id === needId; });
+    if (!need) return;
+    need.registers.forEach(function(rid) { regIdSet[rid] = true; });
+    if (need.tip) tips.push({ label: need.label, tip: need.tip });
+    if (needId === 'nordic-linkage') nordicNeeded = true;
+  });
+
+  var regIds = Object.keys(regIdSet);
+  var regs = regIds.map(function(rid) { return REGISTRIES.find(function(r) { return r.id === rid; }); }).filter(Boolean);
+
+  /* Sort: linkage first, then by category */
+  var catOrder = { linkage: 0, exposure: 1, outcome: 2, confounder: 3 };
+  regs.sort(function(a, b) { return (catOrder[a.category] || 9) - (catOrder[b.category] || 9); });
+
+  var html = '';
+  html += '<div class="feasibility-regs-title">Recommended registers (' + regs.length + ')</div>';
+  html += '<div class="feasibility-reg-list">';
+  regs.forEach(function(r) {
+    var catColors = { linkage: 'reg-cat-linkage', exposure: 'reg-cat-exposure', outcome: 'reg-cat-outcome', confounder: 'reg-cat-confounder' };
+    html += '<div class="feasibility-reg-item">';
+    html += '<div class="feasibility-reg-item-head">';
+    html += '<span class="reg-abbr-sm">' + escHtml(r.abbreviation) + '</span>';
+    html += '<strong>' + escHtml(r.label) + '</strong>';
+    html += '<span class="reg-cat-badge ' + (catColors[r.category] || '') + '">' + escHtml(r.category) + '</span>';
+    html += '</div>';
+    html += '<div class="feasibility-access">' + escHtml(r.accessRoute) + '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  if (tips.length) {
+    html += '<div class="feasibility-tips">';
+    html += '<div class="feasibility-regs-title">Data notes</div>';
+    tips.forEach(function(t) {
+      html += '<div class="feasibility-tip-item"><strong>' + escHtml(t.label) + ':</strong> ' + escHtml(t.tip) + '</div>';
+    });
+    html += '</div>';
+  }
+
+  if (nordicNeeded) {
+    html += '<div class="feasibility-nordic-warning">Nordic cross-linkage requires separate bilateral data transfer agreements. Contact your national data authority (DST/SCB/FHI/THL) at least 6–12 months before planned study start.</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+/* =========================================================
    INIT
    ========================================================= */
 document.addEventListener('DOMContentLoaded', function() {
@@ -1436,13 +1705,13 @@ document.addEventListener('DOMContentLoaded', function() {
   buildDesignDropdown();
   buildBiasDropdown();
   buildBuilderDropdown();
+  buildRegistryDropdown();
+  renderFeasibilityChecker();
 
   /* Restore last active tab */
   var lastTab = null;
   try { lastTab = sessionStorage.getItem('epi-tab'); } catch(e) {}
-  if (lastTab && ['formulas', 'designs', 'biases', 'builder'].indexOf(lastTab) !== -1) {
+  if (lastTab && ['formulas', 'designs', 'biases', 'builder', 'registries'].indexOf(lastTab) !== -1) {
     showTab(lastTab);
-    var sel = document.getElementById('tab-' + lastTab);
-    if (sel) document.getElementById(sel.id);
   }
 });

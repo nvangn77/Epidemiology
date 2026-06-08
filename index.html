@@ -39,6 +39,10 @@
               aria-controls="panel-builder" aria-selected="false" tabindex="-1">
         Build your model
       </button>
+      <button class="tab-btn" role="tab" id="tab-registries"
+              aria-controls="panel-registries" aria-selected="false" tabindex="-1">
+        Registry navigator
+      </button>
     </nav>
 
     <main id="main-content">
@@ -80,6 +84,17 @@
           <div id="builder-area" class="card-area"></div>
         </div>
       </section>
+
+      <section role="tabpanel" id="panel-registries" aria-labelledby="tab-registries" hidden>
+        <div class="panel-inner">
+          <div class="select-row">
+            <label for="registry-select" class="select-label">Register</label>
+            <select id="registry-select" class="select-field"></select>
+          </div>
+          <div id="registry-card" class="card-area"></div>
+          <div id="registry-feasibility" class="card-area" style="margin-top:1.25rem"></div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -94,6 +109,7 @@
   <script src="data/designs.js"></script>
   <script src="data/biases.js"></script>
   <script src="data/models.js"></script>
+  <script src="data/registries.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
