@@ -39,6 +39,10 @@
               aria-controls="panel-builder" aria-selected="false" tabindex="-1">
         Build your model
       </button>
+      <button class="tab-btn" role="tab" id="tab-registries"
+              aria-controls="panel-registries" aria-selected="false" tabindex="-1">
+        Registry navigator
+      </button>
     </nav>
 
     <main id="main-content">
@@ -80,6 +84,32 @@
           <div id="builder-area" class="card-area"></div>
         </div>
       </section>
+      <section role="tabpanel" id="panel-registries" aria-labelledby="tab-registries" hidden>
+        <div class="panel-inner">
+          <div class="reg-subnav" role="tablist" aria-label="Registry navigator sections">
+            <button class="reg-subnav-btn" role="tab" id="reg-tab-catalog"
+                    aria-controls="reg-panel-catalog" aria-selected="true" tabindex="0">
+              Registry catalog
+            </button>
+            <button class="reg-subnav-btn" role="tab" id="reg-tab-checker"
+                    aria-controls="reg-panel-checker" aria-selected="false" tabindex="-1">
+              Feasibility checker
+            </button>
+          </div>
+          <div id="reg-panel-catalog" role="tabpanel" aria-labelledby="reg-tab-catalog">
+            <div id="reg-country-strip" class="reg-country-strip" role="group" aria-label="Select country"></div>
+            <div class="reg-filter-bar" id="reg-filter-bar"></div>
+            <div class="select-row">
+              <label for="reg-select" class="select-label">Register</label>
+              <select id="reg-select" class="select-field"></select>
+            </div>
+            <div id="reg-card" class="card-area"></div>
+          </div>
+          <div id="reg-panel-checker" role="tabpanel" aria-labelledby="reg-tab-checker" hidden>
+            <div id="reg-checker-body"></div>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -94,6 +124,7 @@
   <script src="data/designs.js"></script>
   <script src="data/biases.js"></script>
   <script src="data/models.js"></script>
+  <script src="data/registries.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
