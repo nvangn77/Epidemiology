@@ -1422,6 +1422,655 @@ function buildAdjustmentAdvice(x, o, meds, cols) {
 }
 
 /* =========================================================
+   REGISTRY NAVIGATOR — STATE
+   ========================================================= */
+state.registry = {
+  country: 'DK',
+  category: 'all',
+  selectedId: null,
+  checker: {
+    stepIndex: 0,
+    answers: {},
+    done: false,
+  },
+};
+
+/* =========================================================
+   REGISTRY NAVIGATOR — COUNTRY STRIP
+   ========================================================= */
+function buildCountryStrip() {
+  var strip = document.getElementById('reg-country-strip');
+  if (!strip) return;
+  strip.innerHTML = '';
+  NORDIC_COUNTRIES.forEach(function(c) {
+    var btn = document.createElement('button');
+    btn.className = 'reg-country-btn' + (c.code === state.registry.country ? ' active' : '') +
+                    (c.status === 'stub' ? ' stub' : '');
+    btn.setAttribute('type', 'button');
+    btn.setAttribute('aria-pressed', c.code === state.registry.country ? 'true' : 'false');
+    btn.innerHTML =
+      '<span class="reg-country-code">' + escHtml(c.code) + '</span>' +
+      '<span class="reg-country-name">' + escHtml(c.name) + '</span>' +
+      (c.status === 'stub' ? '<span class="reg-country-badge">expansion</span>' : '');
+    btn.addEventListener('click', function() { selectCountry(c.code); });
+    strip.appendChild(btn);
+  });
+}
+
+function selectCountry(code) {
+  state.registry.country = code;
+  state.registry.selectedId = null;
+  buildCountryStrip();
+  populateRegFilterAndSelect();
+  renderCountryCard(code);
+}
+
+/* =========================================================
+   REGISTRY NAVIGATOR — FILTER BAR
+   ========================================================= */
+var REG_CATEGORIES = [
+  { value: 'all',         label: 'All' },
+  { value: 'medications', label: 'Medications' },
+  { value: 'diagnoses',   label: 'Diagnoses' },
+  { value: 'vital-status',label: 'Vital status' },
+  { value: 'socioeconomic',label: 'Socioeconomic' },
+  { value: 'cancer',      label: 'Cancer' },
+  { value: 'clinical',    label: 'Clinical quality' },
+  { value: 'laboratory',  label: 'Laboratory' },
+  { value: 'psychiatric', label: 'Psychiatric' },
+];
+
+function buildFilterBar() {
+  var bar = document.getElementById('reg-filter-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  REG_CATEGORIES.forEach(function(cat) {
+    var chip = document.createElement('button');
+    chip.className = 'reg-filter-chip' + (cat.value === state.registry.category ? ' active' : '');
+    chip.setAttribute('type', 'button');
+    chip.textContent = cat.label;
+    chip.addEventListener('click', function() {
+      state.registry.category = cat.value;
+      buildFilterBar();
+      populateRegFilterAndSelect();
+    });
+    bar.appendChild(chip);
+  });
+}
+
+/* =========================================================
+   REGISTRY NAVIGATOR — DROPDOWN
+   ========================================================= */
+function populateRegFilterAndSelect() {
+  var sel = document.getElementById('reg-select');
+  if (!sel) return;
+  sel.innerHTML = '';
+  var country = state.registry.country;
+  var cat = state.registry.category;
+  var filtered = REGISTRIES.filter(function(r) {
+    return r.country === country && (cat === 'all' || r.category === cat);
+  });
+
+  if (filtered.length === 0) {
+    var opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '— No registers in this category for ' + country + ' —';
+    sel.appendChild(opt);
+    document.getElementById('reg-card').innerHTML = '';
+    return;
+  }
+
+  filtered.forEach(function(r, i) {
+    var opt = document.createElement('option');
+    opt.value = r.id;
+    opt.textContent = r.abbreviation + ' — ' + r.shortName;
+    sel.appendChild(opt);
+    if (i === 0 && !state.registry.selectedId) state.registry.selectedId = r.id;
+  });
+
+  if (state.registry.selectedId) {
+    var found = filtered.filter(function(r) { return r.id === state.registry.selectedId; });
+    if (found.length) {
+      sel.value = found[0].id;
+    } else {
+      state.registry.selectedId = filtered[0].id;
+      sel.value = filtered[0].id;
+    }
+  }
+
+  renderRegistryCard(state.registry.selectedId);
+
+  sel.onchange = function() {
+    state.registry.selectedId = sel.value;
+    renderRegistryCard(sel.value);
+  };
+}
+
+/* =========================================================
+   REGISTRY NAVIGATOR — COUNTRY STUB CARD
+   ========================================================= */
+function renderCountryCard(code) {
+  var c = NORDIC_COUNTRIES.filter(function(x) { return x.code === code; })[0];
+  if (!c) return;
+  if (c.status !== 'stub') {
+    populateRegFilterAndSelect();
+    return;
+  }
+
+  var card = document.getElementById('reg-card');
+  var regs = REGISTRIES.filter(function(r) { return r.country === code; });
+  var html = '<div class="reg-detail">';
+  html += '<div class="reg-detail-header">';
+  html += '<div class="reg-detail-title">' + escHtml(c.name) + ' — Nordic Expansion</div>';
+  html += '<div class="reg-detail-subtitle">' + escHtml(c.nativeName) + ' · Population ' + escHtml(c.population) + '</div>';
+  html += '</div>';
+
+  html += '<div class="callout">';
+  html += '<div class="reg-section-label">Linkage identifier</div>';
+  html += '<strong>' + escHtml(c.linkageKey) + '</strong> — ' + escHtml(c.linkageKeyFull);
+  html += '</div>';
+
+  html += '<div class="callout" style="margin-top:0.6rem">';
+  html += '<div class="reg-section-label">Data protection &amp; access</div>';
+  html += escHtml(c.dataProtection);
+  html += '</div>';
+
+  if (regs.length) {
+    html += '<div class="reg-section-label" style="margin-top:1rem">Profiled registers (' + regs.length + ')</div>';
+    html += '<div class="reg-stub-list">';
+    regs.forEach(function(r) {
+      html += '<div class="reg-stub-item">';
+      html += '<span class="reg-cat-badge reg-cat-' + escHtml(r.category) + '">' + escHtml(r.category) + '</span>';
+      html += '<strong>' + escHtml(r.abbreviation) + '</strong> — ' + escHtml(r.shortName);
+      html += '<div class="reg-stub-coverage">' + escHtml(r.coverage) + '</div>';
+      if (r.crossNordicCompatibility && r.crossNordicCompatibility.length) {
+        r.crossNordicCompatibility.forEach(function(n) {
+          if (n.country === 'DK') {
+            html += '<div class="reg-nordic-note"><span class="reg-nordic-flag">DK</span>' + escHtml(n.note) + '</div>';
+          }
+        });
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+  card.innerHTML = html;
+}
+
+/* =========================================================
+   REGISTRY NAVIGATOR — REGISTRY DETAIL CARD
+   ========================================================= */
+function renderRegistryCard(id) {
+  var reg = REGISTRIES.filter(function(r) { return r.id === id; })[0];
+  var card = document.getElementById('reg-card');
+  if (!reg || !card) return;
+
+  if (reg.stub) {
+    renderCountryCard(reg.country);
+    return;
+  }
+
+  var html = '<div class="reg-detail">';
+
+  /* Header */
+  html += '<div class="reg-detail-header">';
+  html += '<div class="reg-detail-title">' + escHtml(reg.fullName) + '</div>';
+  html += '<div class="reg-detail-meta-row">';
+  html += '<span class="reg-cat-badge reg-cat-' + escHtml(reg.category) + '">' + escHtml(reg.category) + '</span>';
+  html += '<span class="reg-abbr-pill">' + escHtml(reg.abbreviation) + '</span>';
+  if (reg.drugSetting) {
+    var settingLabel = reg.drugSetting === 'out-of-hospital' ? 'Community pharmacy' : 'In-hospital';
+    html += '<span class="reg-setting-pill reg-setting-' + escHtml(reg.drugSetting.replace('-', '')) + '">' + settingLabel + '</span>';
+  }
+  html += '</div>';
+  html += '</div>';
+
+  /* Meta grid */
+  html += '<div class="reg-meta-grid">';
+  html += regMetaItem('Data holder', reg.dataHolder);
+  html += regMetaItem('Established', String(reg.established));
+  html += regMetaItem('Available from', reg.availableFrom);
+  html += regMetaItem('Update frequency', reg.updateFrequency);
+  html += regMetaItem('Linkage key', reg.linkageKey);
+  if (reg.nationwideStabilization) {
+    html += regMetaItem('Nationwide stabilisation', reg.nationwideStabilization);
+  }
+  if (reg.icdVersion) {
+    html += regMetaItem('Coding version', reg.icdVersion);
+  }
+  html += '</div>';
+
+  /* Coverage */
+  html += regSection('Population &amp; coverage', escHtml(reg.coverage));
+
+  /* LPR version note */
+  if (reg.lprVersionNote) {
+    html += '<div class="warn-box" style="margin-bottom:0.75rem">';
+    html += '<strong>LPR version note:</strong> ' + escHtml(reg.lprVersionNote);
+    html += '</div>';
+  }
+
+  /* Primary variables */
+  if (reg.primaryVariables && reg.primaryVariables.length) {
+    html += '<div class="reg-section-label">Primary variables</div>';
+    html += '<ul class="reg-var-list">';
+    reg.primaryVariables.forEach(function(v) {
+      html += '<li>' + escHtml(v) + '</li>';
+    });
+    html += '</ul>';
+  }
+
+  /* Strengths */
+  if (reg.strengths && reg.strengths.length) {
+    html += regBulletSection('Strengths', reg.strengths, 'reg-strength-list');
+  }
+
+  /* Limitations */
+  if (reg.limitations && reg.limitations.length) {
+    html += regBulletSection('Limitations', reg.limitations, 'reg-limit-list');
+  }
+
+  /* Validation metrics */
+  if (reg.validationMetrics && reg.validationMetrics.length) {
+    html += '<div class="reg-section-label">Validation metrics</div>';
+    html += '<table class="reg-val-table"><thead><tr>';
+    html += '<th>Phenotype</th><th>Metric</th><th>Value</th><th>Reference</th>';
+    html += '</tr></thead><tbody>';
+    reg.validationMetrics.forEach(function(vm) {
+      html += '<tr>';
+      html += '<td>' + escHtml(vm.phenotype) + '</td>';
+      html += '<td><span class="reg-metric-pill">' + escHtml(vm.metric) + '</span></td>';
+      html += '<td class="reg-metric-value">' + escHtml(vm.value) + '</td>';
+      html += '<td class="reg-ref">' + escHtml(vm.reference) + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+
+  /* Nordic compatibility */
+  if (reg.crossNordicCompatibility && reg.crossNordicCompatibility.length) {
+    html += '<div class="reg-section-label">Cross-Nordic compatibility</div>';
+    html += '<div class="reg-nordic-grid">';
+    reg.crossNordicCompatibility.forEach(function(n) {
+      html += '<div class="reg-nordic-item">';
+      html += '<span class="reg-nordic-flag">' + escHtml(n.country) + '</span>';
+      html += '<span class="reg-nordic-text">' + escHtml(n.note) + '</span>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  /* Data access note */
+  if (reg.dataAccessNote) {
+    html += '<div class="callout" style="margin-top:0.75rem">';
+    html += '<div class="reg-section-label">Data access</div>';
+    html += escHtml(reg.dataAccessNote);
+    html += '</div>';
+  }
+
+  html += '</div>';
+  card.innerHTML = html;
+}
+
+function regMetaItem(label, value) {
+  return '<div class="reg-meta-item"><div class="reg-meta-label">' + escHtml(label) +
+         '</div><div class="reg-meta-value">' + escHtml(value) + '</div></div>';
+}
+
+function regSection(label, htmlContent) {
+  return '<div class="reg-section-label">' + label + '</div>' +
+         '<p class="reg-section-text">' + htmlContent + '</p>';
+}
+
+function regBulletSection(label, items, cls) {
+  var html = '<div class="reg-section-label">' + escHtml(label) + '</div>';
+  html += '<ul class="' + cls + '">';
+  items.forEach(function(item) {
+    html += '<li>' + escHtml(item) + '</li>';
+  });
+  html += '</ul>';
+  return html;
+}
+
+/* =========================================================
+   REGISTRY NAVIGATOR — FEASIBILITY CHECKER
+   ========================================================= */
+function initFeasibilityChecker() {
+  renderCheckerStep();
+}
+
+function renderCheckerStep() {
+  var body = document.getElementById('reg-checker-body');
+  if (!body) return;
+  var ch = state.registry.checker;
+
+  if (ch.done) {
+    renderCheckerResult();
+    return;
+  }
+
+  var step = FEASIBILITY_TREE.steps[ch.stepIndex];
+  if (!step) { ch.done = true; renderCheckerResult(); return; }
+
+  var totalSteps = FEASIBILITY_TREE.steps.length;
+  var html = '<div class="reg-checker">';
+
+  /* Progress */
+  html += '<div class="reg-checker-progress">';
+  html += '<div class="reg-checker-step-label">Step ' + (ch.stepIndex + 1) + ' of ' + totalSteps + ' — ' + escHtml(step.label) + '</div>';
+  html += '<div class="reg-checker-progress-bar"><div class="reg-checker-progress-fill" style="width:' +
+          Math.round(((ch.stepIndex) / totalSteps) * 100) + '%"></div></div>';
+  html += '</div>';
+
+  html += '<div class="reg-checker-question">' + escHtml(step.question) + '</div>';
+  if (step.hint) {
+    html += '<div class="reg-checker-hint">' + escHtml(step.hint) + '</div>';
+  }
+
+  /* Options */
+  var currentAnswers = ch.answers[step.id] || [];
+  if (!Array.isArray(currentAnswers)) currentAnswers = [currentAnswers];
+
+  html += '<div class="reg-checker-options" id="checker-options-' + escHtml(step.id) + '">';
+  step.options.forEach(function(opt) {
+    var isSelected = currentAnswers.indexOf(opt.value) !== -1;
+    html += '<button type="button" class="reg-checker-opt' + (isSelected ? ' selected' : '') + '"' +
+            ' data-step="' + escHtml(step.id) + '"' +
+            ' data-value="' + escHtml(opt.value) + '"' +
+            ' data-multi="' + (step.multiSelect ? 'true' : 'false') + '">';
+    html += '<span class="reg-checker-opt-label">' + escHtml(opt.label) + '</span>';
+    html += '<span class="reg-checker-opt-desc">' + escHtml(opt.description) + '</span>';
+    html += '</button>';
+  });
+  html += '</div>';
+
+  /* Nav buttons */
+  html += '<div class="reg-checker-nav">';
+  if (ch.stepIndex > 0) {
+    html += '<button type="button" class="reg-checker-back-btn" id="checker-back">Back</button>';
+  }
+  var hasAnswer = ch.answers[step.id] && (Array.isArray(ch.answers[step.id]) ? ch.answers[step.id].length > 0 : true);
+  html += '<button type="button" class="reg-checker-next-btn" id="checker-next"' + (hasAnswer ? '' : ' disabled') + '>';
+  html += ch.stepIndex < totalSteps - 1 ? 'Next' : 'See recommendations';
+  html += '</button>';
+  html += '</div>';
+  html += '</div>';
+
+  body.innerHTML = html;
+
+  /* Bind option clicks */
+  body.querySelectorAll('.reg-checker-opt').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var stepId = btn.getAttribute('data-step');
+      var value = btn.getAttribute('data-value');
+      var multi = btn.getAttribute('data-multi') === 'true';
+      if (multi) {
+        var arr = ch.answers[stepId] || [];
+        if (!Array.isArray(arr)) arr = [arr];
+        var idx = arr.indexOf(value);
+        if (idx === -1) arr.push(value); else arr.splice(idx, 1);
+        ch.answers[stepId] = arr;
+      } else {
+        ch.answers[stepId] = [value];
+      }
+      renderCheckerStep();
+    });
+  });
+
+  var nextBtn = body.querySelector('#checker-next');
+  if (nextBtn) {
+    nextBtn.addEventListener('click', function() {
+      if (ch.stepIndex < totalSteps - 1) {
+        ch.stepIndex++;
+        renderCheckerStep();
+      } else {
+        ch.done = true;
+        renderCheckerResult();
+      }
+    });
+  }
+
+  var backBtn = body.querySelector('#checker-back');
+  if (backBtn) {
+    backBtn.addEventListener('click', function() {
+      if (ch.stepIndex > 0) { ch.stepIndex--; renderCheckerStep(); }
+    });
+  }
+}
+
+function computeRecommendations() {
+  var a = state.registry.checker.answers;
+  var exposure = (a.q_exposure || [])[0] || '';
+  var period   = (a.q_period   || [])[0] || '';
+  var outcomes = a.q_outcome     || [];
+  var confs    = a.q_confounders || [];
+  var scope    = (a.q_scope    || [])[0] || '';
+
+  var recs = [];
+  var warnings = [];
+
+  function addRec(id, role, note) {
+    if (!recs.some(function(r) { return r.id === id; })) {
+      recs.push({ id: id, role: role, note: note || null });
+    }
+  }
+
+  /* ── Exposure routing ─────────────────────────────── */
+  if (exposure === 'drug_outpatient' || exposure === 'drug_both') {
+    addRec('dk-lsr', 'Primary exposure register',
+      'All community pharmacy dispensings since 1994. Define drug exposure using ATC code window. Dispensed = no primary non-adherence bias.');
+  }
+  if (exposure === 'drug_inhospital' || exposure === 'drug_both') {
+    addRec('dk-dhmr', 'Primary exposure register (in-hospital)',
+      'IV/SC biologics, chemotherapy, parenteral agents since 2018.');
+    if (period === 'pre2019' || period === 'spans' || period === 'any') {
+      warnings.push('DHMR (Sygehusmedicinregisteret) was established in 2018 and reached nationwide stability ~2022. Studies requiring in-hospital drug data before 2022 face region-dependent left-truncation. Consider a sensitivity analysis restricted to post-2022 to assess the impact of incomplete early DHMR data.');
+    }
+  }
+
+  /* ── Period routing ───────────────────────────────── */
+  if (period === 'spans') {
+    addRec('dk-lpr', 'Outcome / covariate (LPR2 + LPR3 required)',
+      'Request both LPR2 (episode-based, up to 2018) and LPR3 (relational, 2019+). Bridge-variable logic required. Re-validate ICD-10 phenotype algorithms in LPR3 table structure.');
+    warnings.push('LPR structural shift: LPR2 (up to 2018) is episode-based; LPR3 (2019+) uses a relational model with contacts, diagnoses, and procedures in separate tables requiring explicit joins. Phenotype algorithms using LPR2 field names must be redesigned for LPR3. This is the most common source of data extraction errors in post-2019 studies.');
+  } else if (exposure === 'non_drug' || outcomes.indexOf('hospital_dx') !== -1 || confs.indexOf('comorbidity') !== -1) {
+    if (!recs.some(function(r) { return r.id === 'dk-lpr'; })) {
+      addRec('dk-lpr', 'Outcome / covariate register',
+        period === 'pre2019' ? 'LPR2 only.' : period === 'post2019' ? 'LPR3 only — relational schema.' : null);
+    }
+  }
+
+  /* ── Outcome routing ──────────────────────────────── */
+  if (outcomes.indexOf('hospital_dx') !== -1) {
+    addRec('dk-lpr', 'Primary outcome register', 'ICD-10 diagnostic and procedure codes.');
+  }
+  if (outcomes.indexOf('death_all') !== -1 || outcomes.indexOf('death_cause') !== -1) {
+    addRec('dk-cpr', 'Censoring (vital status)',
+      'Date of death or emigration as event/censoring date in survival analysis.');
+    if (outcomes.indexOf('death_cause') !== -1) {
+      addRec('dk-dar', 'Primary outcome (cause-specific mortality)',
+        'ICD-10 underlying cause of death. Note ~12–18 month processing lag — explicitly account for incomplete most-recent year.');
+    }
+  }
+  if (outcomes.indexOf('cancer') !== -1) {
+    addRec('dk-dcr', 'Primary outcome (incident cancer)',
+      'ICD-O-3 topography + morphology. Can also serve as competing event or prevalent-cancer exclusion criterion.');
+  }
+  if (outcomes.indexOf('lab') !== -1) {
+    addRec('dk-labka', 'Outcome / covariate (laboratory)',
+      'Specify regions. North Denmark Region (Nordjylland) has complete coverage from 1998; other regions limited.');
+    warnings.push('LABKA regional heterogeneity: a nationally complete laboratory register does not exist. Restricting to North Denmark Region maximises temporal depth (from 1998) but limits generalisability. Consider a sensitivity analysis by region and explicitly declare regional coverage scope in the methods.');
+  }
+  if (outcomes.indexOf('psychiatric') !== -1) {
+    addRec('dk-pcrr', 'Outcome / covariate (psychiatric)',
+      'ICD-10 F-codes from 1969 (inpatient) and 1995 (outpatient). Hospital psychiatric contacts only.');
+  }
+  if (outcomes.indexOf('drug_event') !== -1) {
+    if (exposure !== 'drug_outpatient' && exposure !== 'drug_both') {
+      addRec('dk-lsr', 'Outcome register (drug event)', 'ATC-coded community pharmacy dispensings.');
+    }
+  }
+
+  /* ── Confounder routing ───────────────────────────── */
+  if (confs.indexOf('comorbidity') !== -1) {
+    addRec('dk-lpr', 'Confounder register (comorbidity)',
+      'ICD-10 codes for Charlson Comorbidity Index or Elixhauser Index construction.');
+  }
+  if (confs.indexOf('ses') !== -1) {
+    addRec('dk-dst', 'Confounder register (socioeconomic status)',
+      'Separate application to Danmarks Statistik. IEU (income), UDDA (education), IDA (employment).');
+    warnings.push('Socioeconomic data (Danmarks Statistik) requires a separate data application to DST Forskerservice — independent from Sundhedsdatastyrelsen. Cross-environment linkage adds ~3–6 months to the data access timeline and requires a formal joint-project agreement where the CPR-based linkage is managed within the DST secure environment.');
+  }
+  if (confs.indexOf('lab_cov') !== -1) {
+    addRec('dk-labka', 'Confounder register (baseline laboratory values)',
+      'Declare regional coverage; use most recent measurement before index date.');
+  }
+  if (confs.indexOf('clinical_score') !== -1) {
+    addRec('dk-rkkp', 'Confounder register (disease severity)',
+      'Identify the relevant RKKP registry: DANBIO (RA), DLD (diabetes), DAP (stroke), DHRD (cardiac surgery). Separate application per registry secretariat.');
+    warnings.push('RKKP clinical quality registries require a separate application to each registry secretariat — not via Sundhedsdatastyrelsen Forskerservice. Each registry has its own data access committee. Budget 3–6 months for review, separate from the SDS/DST timelines.');
+  }
+
+  /* ── Always include CPR ───────────────────────────── */
+  addRec('dk-cpr', 'Cohort definition and censoring',
+    'Vital status, migration dates, and demographic data required for any cohort entry and censoring algorithm.');
+
+  /* ── Scope routing ────────────────────────────────── */
+  if (scope === 'nordic_pool') {
+    warnings.push('CRITICAL — Data sovereignty: raw individual-level data cannot leave Danish secure computing environments under the Danish Data Protection Act (Databeskyttelsesloven) and GDPR. Pooling individual-level data from Denmark with other Nordic countries is not permissible under standard research agreements. Cross-Nordic analyses must use one of: (a) meta-analytic pooling of country-level summary statistics, (b) identical pre-specified analysis scripts run independently in each country\'s secure environment with only estimates shared, or (c) a federated analysis platform approved under a specific data-sharing agreement among all participating data controllers.');
+  }
+  if (scope === 'nordic_meta') {
+    warnings.push('Cross-Nordic meta-analysis: each country team analyses data in their own secure environment using identical pre-specified scripts. Only summary statistics (log-HRs, SEs, event counts) are shared. Ensure the common analysis plan pre-specifies identical inclusion/exclusion criteria, exposure windows, confounder sets, and outcome definitions across all five countries. Note structural differences: DHMR has no Nordic equivalent; NorPD starts 2004, Kela covers reimbursed drugs only; LPR3 has no Nordic structural equivalent.');
+  }
+
+  return { registries: recs, warnings: warnings };
+}
+
+function renderCheckerResult() {
+  var body = document.getElementById('reg-checker-body');
+  if (!body) return;
+  var result = computeRecommendations();
+
+  var html = '<div class="reg-checker">';
+  html += '<div class="reg-checker-result-header">Recommended data sources</div>';
+
+  if (result.registries.length) {
+    html += '<div class="reg-checker-rec-list">';
+    result.registries.forEach(function(rec) {
+      var reg = REGISTRIES.filter(function(r) { return r.id === rec.id; })[0];
+      if (!reg) return;
+      html += '<div class="reg-checker-rec-item">';
+      html += '<div class="reg-checker-rec-top">';
+      html += '<span class="reg-abbr-pill">' + escHtml(reg.abbreviation) + '</span>';
+      html += '<span class="reg-checker-rec-name">' + escHtml(reg.shortName) + '</span>';
+      html += '<span class="reg-cat-badge reg-cat-' + escHtml(reg.category) + '">' + escHtml(reg.category) + '</span>';
+      html += '<button type="button" class="reg-checker-view-btn" data-id="' + escHtml(reg.id) + '">View profile</button>';
+      html += '</div>';
+      html += '<div class="reg-checker-rec-role"><em>Role:</em> ' + escHtml(rec.role) + '</div>';
+      if (rec.note) {
+        html += '<div class="reg-checker-rec-note">' + escHtml(rec.note) + '</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  if (result.warnings.length) {
+    html += '<div class="reg-checker-warnings">';
+    html += '<div class="reg-section-label" style="margin-bottom:0.5rem">Caveats &amp; planning notes</div>';
+    result.warnings.forEach(function(w) {
+      html += '<div class="warn-box reg-checker-warn-item">' + escHtml(w) + '</div>';
+    });
+    html += '</div>';
+  }
+
+  html += '<button type="button" class="reg-checker-reset-btn" id="checker-reset">Start over</button>';
+  html += '</div>';
+
+  body.innerHTML = html;
+
+  body.querySelectorAll('.reg-checker-view-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = btn.getAttribute('data-id');
+      /* Switch to catalog sub-tab and show the registry */
+      switchRegSubTab('catalog');
+      state.registry.country = 'DK';
+      state.registry.category = 'all';
+      state.registry.selectedId = id;
+      buildCountryStrip();
+      buildFilterBar();
+      populateRegFilterAndSelect();
+      var sel = document.getElementById('reg-select');
+      if (sel) sel.value = id;
+    });
+  });
+
+  var resetBtn = body.querySelector('#checker-reset');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', function() {
+      state.registry.checker = { stepIndex: 0, answers: {}, done: false };
+      renderCheckerStep();
+    });
+  }
+}
+
+/* =========================================================
+   REGISTRY NAVIGATOR — SUB-TAB SWITCHING
+   ========================================================= */
+function switchRegSubTab(which) {
+  var catalogBtn   = document.getElementById('reg-tab-catalog');
+  var checkerBtn   = document.getElementById('reg-tab-checker');
+  var catalogPanel = document.getElementById('reg-panel-catalog');
+  var checkerPanel = document.getElementById('reg-panel-checker');
+  if (!catalogBtn) return;
+
+  if (which === 'catalog') {
+    catalogBtn.setAttribute('aria-selected', 'true');
+    checkerBtn.setAttribute('aria-selected', 'false');
+    catalogBtn.tabIndex = 0;
+    checkerBtn.tabIndex = -1;
+    catalogPanel.removeAttribute('hidden');
+    checkerPanel.setAttribute('hidden', '');
+  } else {
+    checkerBtn.setAttribute('aria-selected', 'true');
+    catalogBtn.setAttribute('aria-selected', 'false');
+    checkerBtn.tabIndex = 0;
+    catalogBtn.tabIndex = -1;
+    checkerPanel.removeAttribute('hidden');
+    catalogPanel.setAttribute('hidden', '');
+  }
+}
+
+function bindRegSubNav() {
+  var catalogBtn = document.getElementById('reg-tab-catalog');
+  var checkerBtn = document.getElementById('reg-tab-checker');
+  if (!catalogBtn || !checkerBtn) return;
+  catalogBtn.addEventListener('click', function() { switchRegSubTab('catalog'); });
+  checkerBtn.addEventListener('click', function() { switchRegSubTab('checker'); });
+  catalogBtn.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight') { e.preventDefault(); checkerBtn.click(); checkerBtn.focus(); }
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); catalogBtn.focus(); }
+  });
+  checkerBtn.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); catalogBtn.click(); catalogBtn.focus(); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); checkerBtn.focus(); }
+  });
+}
+
+/* =========================================================
+   REGISTRY NAVIGATOR — INIT
+   ========================================================= */
+function initRegistryNavigator() {
+  buildCountryStrip();
+  buildFilterBar();
+  populateRegFilterAndSelect();
+  bindRegSubNav();
+  initFeasibilityChecker();
+}
+
+/* =========================================================
    INIT
    ========================================================= */
 document.addEventListener('DOMContentLoaded', function() {
@@ -1434,11 +2083,12 @@ document.addEventListener('DOMContentLoaded', function() {
   buildDesignDropdown();
   buildBiasDropdown();
   buildBuilderDropdown();
+  initRegistryNavigator();
 
   /* Restore last active tab */
   var lastTab = null;
   try { lastTab = sessionStorage.getItem('epi-tab'); } catch(e) {}
-  if (lastTab && ['formulas', 'designs', 'biases', 'builder'].indexOf(lastTab) !== -1) {
+  if (lastTab && ['formulas', 'designs', 'biases', 'builder', 'registries'].indexOf(lastTab) !== -1) {
     showTab(lastTab);
     var sel = document.getElementById('tab-' + lastTab);
     if (sel) document.getElementById(sel.id);
